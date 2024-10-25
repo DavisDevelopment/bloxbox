@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "browserify-shim": "^3.8.16",
+    "gl-matrix": "^3.4.3",
+    "jquery": "^3.7.1",
+    "numjs": "^0.16.1",
+    "underscore": "^1.13.7"
+  }
+}
