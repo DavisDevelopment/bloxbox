@@ -119,10 +119,11 @@ class BlockData {
       if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
          throw new RangeError("Coordinates out of bounds");
       }
+      //farts
    }
 
 
-   
+
    /*
     return the lowest z-index which has a non-zero value
    */
