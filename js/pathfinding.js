@@ -6,7 +6,12 @@ const Material = v.Material;
 const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
 
 // solid materials. e.g. materials which can be walked on, but not walked through
-const solid_materials = _.without(Material.all().map(x=>x.toLowerCase()), ...non_solids).map(Material.getMaterialByName);
+var solid_materials = Material.all().map(Material.getMaterialByName);
+solid_materials = _.without(solid_materials, ...non_solids);
+
+console.log('non-solids=', non_solids);
+console.log('solids=', solid_materials);
+
 
 const directions = [
    { x: 0, y: 1, z: 0 },   // Forward
@@ -64,6 +69,13 @@ class AStar {
       this.end_pos = end_pos;
 
       // this.visited = Set();
+      console.log('start_block=', Material.getMaterialName(block(world, start_pos.x, start_pos.y, start_pos.z)));
+      console.log('is_solid=', isSolid(world, start_pos.x, start_pos.y, start_pos.z));
+
+      const endBlock = block(world, end_pos.x, end_pos.y, end_pos.z);
+      if (isSolid(world, end_pos.x, end_pos.y, end_pos.z)) {
+         throw new Error('end_pos must be a non-solid block');
+      }
    }
 
    poskey(pos) {
@@ -98,11 +110,53 @@ class AStar {
       //TODO
    }
 
+   canWalkTo(x, y, z) {
+      const world = this.world;
+      const vmd = world.voxelMaterialData;
+      return (
+         vmd.isValidCoord(x, y, z) &&
+         isSolid(world, x, y, z)
+         // && isBelowAir(world, x, y, z)
+         // && vmd.isSunlit(x, y, z)
+      );
+   }
+
+   isValidMove(ax, ay, az, bx, by, bz) {
+      if (ax === bx && ay === by && az === bz) {
+         // non-movement is not valid
+         return false;
+      }
+
+      // check that the two positions are adjacent
+      if (dist3d(ax, ay, az, bx, by, bz) > 2) {
+         console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
+         return false;
+      }
+
+      const world = this.world;
+
+      // is position 'a' a non-solid block with a solid block underneath it
+      var is_a_standable = (!isSolid(world, ax, ay, az) && isSolid(world, ax, ay, az - 1));
+
+      // is position 'b' a non-solid block with a solid block underneath it
+      var is_b_standable = (!isSolid(world, bx, by, bz) && isSolid(world, bx, by, bz - 1));
+
+      let validity = (is_a_standable && is_b_standable);
+      if (validity) {
+         // console.log(`(${ax},${ay},${az})->(${bx},${by},${bz}) is a valid move`);
+      }
+      else {
+
+      }
+      return validity;
+   }
+
    /**
     * get list of Nodes representing valid coordinate nodes which are accessibly adjacent to the given node
     * @param {Node} node
     */
    getNeighbors(node, grid=null) {
+      const me = this;
       if (!this.neighborCache) this.neighborCache = {};
 
       const nckey = this.poskey(node);
@@ -116,18 +170,9 @@ class AStar {
       var vmd = world.voxelMaterialData;
       var results = [];
       
-      function canWalkTo(x, y, z) {
-         return (
-            vmd.isValidCoord(x, y, z) &&
-            isSolid(world, x, y, z)
-         );
-      }
-
-      function pos(x, y, z) { return { x: x, y: y, z: z } }
-
       function visit(x, y, z) {
-         if (canWalkTo(x, y, z)) {
-            results.push(pos(x, y, z));
+         if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
+            results.push(new Node(x, y, z, true));
          }
       }
 
@@ -139,13 +184,34 @@ class AStar {
       visit(x + 1, y, z);
       //left
       visit(x - 1, y, z);
-      //up
-      visit(x, y, z - 1);
-      //down
-      visit(x, y, z + 1);
 
-      results = results.map(toNode);
+      //up
+      //visit(x, y, z - 1);
+      //down
+      //visit(x, y, z + 1);
+
+      // up-right
+      visit(x + 1, y, z - 1);
+      // up-left
+      visit(x - 1, y, z - 1);
+      // up-forward
+      visit(x, y + 1, z - 1);
+      // up-backward
+      visit(x, y - 1, z - 1);
+
+      // down-right
+      visit(x + 1, y, z + 1);
+      // down-left
+      visit(x - 1, y, z + 1);
+      // down-forward
+      visit(x, y + 1, z + 1);
+      // down-backward
+      visit(x, y - 1, z + 1);
+
+      // results = results.map(toNode);
+
       this.neighborCache[nckey] = results;
+
       return results;
    }
 
@@ -190,7 +256,6 @@ class AStar {
          closedSet.add(currentNode);
 
          const neighbors = this.getNeighbors(currentNode);
-
          if (neighbors.length == 0) {
             throw new Error('there should always be neighbors');
          }
@@ -227,3 +292,13 @@ function pteq(a, b) {
    return a.x === b.x && a.y === b.y && a.z === b.z;
 }
 module.exports.pteq = pteq;
+
+/**
+ * Calculate the Euclidean distance between two points in 3D space.
+ */
+function dist3d(ax, ay, az, bx, by, bz) {
+   const dx = ax - bx;
+   const dy = ay - by;
+   const dz = az - bz;
+   return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}

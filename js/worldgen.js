@@ -22,23 +22,29 @@ function grow_tree(world, x, y, z) {
          const treeHeight = 5;
          for (let i = 0; i < treeHeight; i++) {
             // Set each block in the tree to wood
-            vd.setBlock(x, y + i, z, Material.WOOD);
+            vd.setBlock(x, y, z-i, Material.WOOD);
          }
 
+         /*
          // Set the top block of the tree to leaves
-         vd.setBlock(x, y + treeHeight, z, Material.LEAVES);
+         vd.setBlock(x, y, z + treeHeight, Material.LEAVES);
 
-         const canopyRadius = 3;
-         // Grow a little tree-top made of leaves around the top of the tree
-         for (let dx = -canopyRadius; dx <= canopyRadius; dx++) {
-            for (let dz = -canopyRadius; dz <= canopyRadius; dz++) {
-               // Check if the block is within a circle of radius canopyRadius
-               if (dx * dx + dz * dz <= canopyRadius * canopyRadius) {
-                  // Set the block to leaves
-                  vd.setBlock(x + dx, y + treeHeight, z + dz, Material.LEAVES);
+         // Grow a square of leaves around the WOOD block right below the top of the tree
+         for (let i = -1; i <= 1; i++) {
+            for (let j = -1; j <= 1; j++) {
+               vd.setBlock(x + i, y + j, z - treeHeight + 1, Material.LEAVES);
+            }
+         }
+
+         // Grow a 2-block-thick, 2-block-tall square of leaves below
+         for (let h = 1; h <= 2; h++) {
+            for (let i = -2; i <= 2; i++) {
+               for (let j = -2; j <= 2; j++) {
+                  vd.setBlock(x + i, y + j, z - treeHeight - h, Material.LEAVES);
                }
             }
          }
+         */
       }
    }
    catch {

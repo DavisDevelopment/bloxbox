@@ -65,7 +65,7 @@ class Person extends Entity {
       const blocks = world.voxelMaterialData;
 
       if (!this._activePath) {
-         var targetPos = { x: 0, y: 0, z: blocks.getSunlitBlockAt(0, 0) };
+         var targetPos = { x: 0, y: 0, z: blocks.getSunlitBlockAt(0, 0)+1};
          var ast = new pf.AStar(this.world, _.clone(this.pos), targetPos);
 
          this._activePath = ast.findpath();

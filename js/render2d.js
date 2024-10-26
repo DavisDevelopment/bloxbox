@@ -62,6 +62,15 @@ class TopDownRenderer {
       }
       $(canvas).on('click', onMouseClick);
 
+      function onMouseRightClick(e) {
+         let rect = canvas.getBoundingClientRect();
+         let x = e.clientX - rect.left;
+         let y = e.clientY - rect.top;
+         me.onCanvasRightClicked(x, y);
+         e.preventDefault();
+      }
+      $(canvas).on('contextmenu', onMouseRightClick);
+
       function onMouseWheel(e) {
          /**
           * How much the mouse wheel was scrolled.
@@ -114,9 +123,32 @@ class TopDownRenderer {
          $(window).off('resize', onResize);
          $(window).off('keydown', onKeydown);
          $(canvas).off('click', onMouseClick);
+         $(canvas).off('contextmenu', onMouseRightClick);
          $(canvas).off('mousewheel', onMouseWheel);
       }
       me._disposalRoutines.push(unbindEventHandlers);
+   }
+
+   onCanvasRightClicked(x, y) {
+      const me = this;
+      const vmd = me.world.voxelMaterialData;
+      const blockType = 1; // Example block type
+      let blockSize = 2.0 * this.viewRect.zoomFactor;
+      let worldX = Math.floor((x - me.viewRect.x) / blockSize);
+      let worldY = Math.floor((y - me.viewRect.y) / blockSize);
+
+      try {
+         // // Select the block at the clicked position
+         const z = this.topBlocks.get(worldX, worldY);
+  
+         var guy = new Person();
+         guy.setPos(worldX, worldY, z + 1);
+         me.world.entities.push(guy);
+      }
+      catch (error) {
+         console.error(error);
+         return ;
+      }
    }
 
    onCanvasClicked(x, y) {
@@ -134,6 +166,7 @@ class TopDownRenderer {
          const selectedBlock = this.world.getBlock(worldX, worldY, z);
          if (selectedBlock !== 0) { // Assuming 0 represents an empty block
             vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
+            
             if (z - 1 >= 0) {
                me.topBlocks.set(worldX, worldY, z - 1);
             }
@@ -143,12 +176,9 @@ class TopDownRenderer {
          else {
             console.log(`No block exists at (${worldX}, ${worldY})`);
          }
-   
-         var guy = new Person();
-         guy.setPos(worldX, worldY, z);
-         me.world.entities.push(guy);
       }
-      catch {
+      catch (error) {
+         console.error(error);
          return ;
       }
    }
@@ -215,6 +245,22 @@ class TopDownRenderer {
          c.arc(displX + blockSize / 2, diplY + blockSize / 2, blockSize / 2, 0, 2 * Math.PI);
          c.fillStyle = 'red'; // Example color for the person
          c.fill();
+
+         // Draw a sequence of lines to visualize the path of the person
+         if (entity._activePath) {
+            c.strokeStyle = 'blue'; // Example color for the path
+            c.lineWidth = 2;
+
+            c.beginPath();
+            c.moveTo(displX + blockSize / 2, diplY + blockSize / 2);
+            for (let i = 0; i < entity._activePath.length; i++) {
+               let pos = entity._activePath[i];
+               let displX = (pos.x * blockSize) + this.viewRect.x;
+               let diplY = (pos.y * blockSize) + this.viewRect.y;
+               c.lineTo(displX + blockSize / 2, diplY + blockSize / 2);
+            }
+            c.stroke();
+         }
       });
    }
 }

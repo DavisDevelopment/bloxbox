@@ -80,7 +80,7 @@ class World {
          var mat = this.voxelMaterialData.blocks[i];
 
          // occasionally plant saplings on top of 'sunlit' grass blocks
-         if (mat == Material.GRASS && Math.random() < 0.002) {
+         if (mat == Material.GRASS && Math.random() < 0.000002) {
             var coords = this.voxelMaterialData.coords(i);
 
             // Check if the block above is directly under open sky before planting sapling

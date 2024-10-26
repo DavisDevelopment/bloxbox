@@ -202,7 +202,12 @@ const Material = v.Material;
 const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
 
 // solid materials. e.g. materials which can be walked on, but not walked through
-const solid_materials = _.without(Material.all().map(x=>x.toLowerCase()), ...non_solids).map(Material.getMaterialByName);
+var solid_materials = Material.all().map(Material.getMaterialByName);
+solid_materials = _.without(solid_materials, ...non_solids);
+
+console.log('non-solids=', non_solids);
+console.log('solids=', solid_materials);
+
 
 const directions = [
    { x: 0, y: 1, z: 0 },   // Forward
@@ -222,37 +227,7 @@ const block = (world, ...args) => {
 var isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
 var isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
 
-function getTraversibleNeighbors(world, x, y, z) {
-   var vmd = world.voxelMaterialData;
-   var results = [];
-   function canWalkTo(x, y, z) {
-      return (
-         vmd.isValidCoord(x, y, z) &&
-         isSolid(world, x, y, z)
-      );
-   }
-   function pos(x, y, z) {return {x:x, y:y, z:z}}
-   function visit(x, y, z) {
-      if (canWalkTo(x, y, z)) {
-         results.push(pos(x, y, z));
-      }
-   }
 
-   // forward
-   visit(x, y+1, z);
-   //backward
-   visit(x, y-1, z);
-   //right
-   visit(x+1, y, z);
-   //left
-   visit(x-1, y, z);
-   //up
-   visit(x, y, z-1);
-   //down
-   visit(x, y, z+1);
-
-   return results;
-}
 
 class Node {
    constructor(x, y, z, walkable) {
@@ -290,6 +265,13 @@ class AStar {
       this.end_pos = end_pos;
 
       // this.visited = Set();
+      console.log('start_block=', Material.getMaterialName(block(world, start_pos.x, start_pos.y, start_pos.z)));
+      console.log('is_solid=', isSolid(world, start_pos.x, start_pos.y, start_pos.z));
+
+      const endBlock = block(world, end_pos.x, end_pos.y, end_pos.z);
+      if (isSolid(world, end_pos.x, end_pos.y, end_pos.z)) {
+         throw new Error('end_pos must be a non-solid block');
+      }
    }
 
    poskey(pos) {
@@ -324,13 +306,109 @@ class AStar {
       //TODO
    }
 
+   canWalkTo(x, y, z) {
+      const world = this.world;
+      const vmd = world.voxelMaterialData;
+      return (
+         vmd.isValidCoord(x, y, z) &&
+         isSolid(world, x, y, z)
+         // && isBelowAir(world, x, y, z)
+         // && vmd.isSunlit(x, y, z)
+      );
+   }
+
+   isValidMove(ax, ay, az, bx, by, bz) {
+      if (ax === bx && ay === by && az === bz) {
+         // non-movement is not valid
+         return false;
+      }
+
+      // check that the two positions are adjacent
+      if (dist3d(ax, ay, az, bx, by, bz) > 2) {
+         console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
+         return false;
+      }
+
+      const world = this.world;
+
+      // is position 'a' a non-solid block with a solid block underneath it
+      var is_a_standable = (!isSolid(world, ax, ay, az) && isSolid(world, ax, ay, az - 1));
+
+      // is position 'b' a non-solid block with a solid block underneath it
+      var is_b_standable = (!isSolid(world, bx, by, bz) && isSolid(world, bx, by, bz - 1));
+
+      let validity = (is_a_standable && is_b_standable);
+      if (validity) {
+         // console.log(`(${ax},${ay},${az})->(${bx},${by},${bz}) is a valid move`);
+      }
+      else {
+
+      }
+      return validity;
+   }
+
    /**
     * get list of Nodes representing valid coordinate nodes which are accessibly adjacent to the given node
     * @param {Node} node
     */
    getNeighbors(node, grid=null) {
-      var neighbors = getTraversibleNeighbors(this.world, node.x, node.y, node.z);
-      return neighbors.map(toNode);
+      const me = this;
+      if (!this.neighborCache) this.neighborCache = {};
+
+      const nckey = this.poskey(node);
+      if (_.has(this.neighborCache, nckey)) {
+         return this.neighborCache[nckey];
+      }
+
+      const world = this.world;
+      var x = node.x, y = node.y, z = node.z;
+
+      var vmd = world.voxelMaterialData;
+      var results = [];
+      
+      function visit(x, y, z) {
+         if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
+            results.push(new Node(x, y, z, true));
+         }
+      }
+
+      // forward
+      visit(x, y + 1, z);
+      //backward
+      visit(x, y - 1, z);
+      //right
+      visit(x + 1, y, z);
+      //left
+      visit(x - 1, y, z);
+
+      //up
+      //visit(x, y, z - 1);
+      //down
+      //visit(x, y, z + 1);
+
+      // up-right
+      visit(x + 1, y, z - 1);
+      // up-left
+      visit(x - 1, y, z - 1);
+      // up-forward
+      visit(x, y + 1, z - 1);
+      // up-backward
+      visit(x, y - 1, z - 1);
+
+      // down-right
+      visit(x + 1, y, z + 1);
+      // down-left
+      visit(x - 1, y, z + 1);
+      // down-forward
+      visit(x, y + 1, z + 1);
+      // down-backward
+      visit(x, y - 1, z + 1);
+
+      // results = results.map(toNode);
+
+      this.neighborCache[nckey] = results;
+
+      return results;
    }
 
    findpath(grid=null) {
@@ -374,7 +452,6 @@ class AStar {
          closedSet.add(currentNode);
 
          const neighbors = this.getNeighbors(currentNode);
-
          if (neighbors.length == 0) {
             throw new Error('there should always be neighbors');
          }
@@ -411,6 +488,17 @@ function pteq(a, b) {
    return a.x === b.x && a.y === b.y && a.z === b.z;
 }
 module.exports.pteq = pteq;
+
+/**
+ * Calculate the Euclidean distance between two points in 3D space.
+ */
+function dist3d(ax, ay, az, bx, by, bz) {
+   const dx = ax - bx;
+   const dy = ay - by;
+   const dz = az - bz;
+   return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 },{"./voxeldata":6,"underscore":47}],4:[function(require,module,exports){
 
 const _ = require('underscore');
@@ -479,7 +567,7 @@ class Person extends Entity {
       const blocks = world.voxelMaterialData;
 
       if (!this._activePath) {
-         var targetPos = { x: 0, y: 0, z: blocks.getSunlitBlockAt(0, 0) };
+         var targetPos = { x: 0, y: 0, z: blocks.getSunlitBlockAt(0, 0)+1};
          var ast = new pf.AStar(this.world, _.clone(this.pos), targetPos);
 
          this._activePath = ast.findpath();
@@ -558,6 +646,15 @@ class TopDownRenderer {
       }
       $(canvas).on('click', onMouseClick);
 
+      function onMouseRightClick(e) {
+         let rect = canvas.getBoundingClientRect();
+         let x = e.clientX - rect.left;
+         let y = e.clientY - rect.top;
+         me.onCanvasRightClicked(x, y);
+         e.preventDefault();
+      }
+      $(canvas).on('contextmenu', onMouseRightClick);
+
       function onMouseWheel(e) {
          /**
           * How much the mouse wheel was scrolled.
@@ -610,9 +707,32 @@ class TopDownRenderer {
          $(window).off('resize', onResize);
          $(window).off('keydown', onKeydown);
          $(canvas).off('click', onMouseClick);
+         $(canvas).off('contextmenu', onMouseRightClick);
          $(canvas).off('mousewheel', onMouseWheel);
       }
       me._disposalRoutines.push(unbindEventHandlers);
+   }
+
+   onCanvasRightClicked(x, y) {
+      const me = this;
+      const vmd = me.world.voxelMaterialData;
+      const blockType = 1; // Example block type
+      let blockSize = 2.0 * this.viewRect.zoomFactor;
+      let worldX = Math.floor((x - me.viewRect.x) / blockSize);
+      let worldY = Math.floor((y - me.viewRect.y) / blockSize);
+
+      try {
+         // // Select the block at the clicked position
+         const z = this.topBlocks.get(worldX, worldY);
+  
+         var guy = new Person();
+         guy.setPos(worldX, worldY, z + 1);
+         me.world.entities.push(guy);
+      }
+      catch (error) {
+         console.error(error);
+         return ;
+      }
    }
 
    onCanvasClicked(x, y) {
@@ -630,6 +750,7 @@ class TopDownRenderer {
          const selectedBlock = this.world.getBlock(worldX, worldY, z);
          if (selectedBlock !== 0) { // Assuming 0 represents an empty block
             vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
+            
             if (z - 1 >= 0) {
                me.topBlocks.set(worldX, worldY, z - 1);
             }
@@ -639,12 +760,9 @@ class TopDownRenderer {
          else {
             console.log(`No block exists at (${worldX}, ${worldY})`);
          }
-   
-         var guy = new Person();
-         guy.setPos(worldX, worldY, z);
-         me.world.entities.push(guy);
       }
-      catch {
+      catch (error) {
+         console.error(error);
          return ;
       }
    }
@@ -711,6 +829,22 @@ class TopDownRenderer {
          c.arc(displX + blockSize / 2, diplY + blockSize / 2, blockSize / 2, 0, 2 * Math.PI);
          c.fillStyle = 'red'; // Example color for the person
          c.fill();
+
+         // Draw a sequence of lines to visualize the path of the person
+         if (entity._activePath) {
+            c.strokeStyle = 'blue'; // Example color for the path
+            c.lineWidth = 2;
+
+            c.beginPath();
+            c.moveTo(displX + blockSize / 2, diplY + blockSize / 2);
+            for (let i = 0; i < entity._activePath.length; i++) {
+               let pos = entity._activePath[i];
+               let displX = (pos.x * blockSize) + this.viewRect.x;
+               let diplY = (pos.y * blockSize) + this.viewRect.y;
+               c.lineTo(displX + blockSize / 2, diplY + blockSize / 2);
+            }
+            c.stroke();
+         }
       });
    }
 }
@@ -1014,7 +1148,7 @@ class World {
          var mat = this.voxelMaterialData.blocks[i];
 
          // occasionally plant saplings on top of 'sunlit' grass blocks
-         if (mat == Material.GRASS && Math.random() < 0.002) {
+         if (mat == Material.GRASS && Math.random() < 0.000002) {
             var coords = this.voxelMaterialData.coords(i);
 
             // Check if the block above is directly under open sky before planting sapling
@@ -1071,23 +1205,29 @@ function grow_tree(world, x, y, z) {
          const treeHeight = 5;
          for (let i = 0; i < treeHeight; i++) {
             // Set each block in the tree to wood
-            vd.setBlock(x, y + i, z, Material.WOOD);
+            vd.setBlock(x, y, z-i, Material.WOOD);
          }
 
+         /*
          // Set the top block of the tree to leaves
-         vd.setBlock(x, y + treeHeight, z, Material.LEAVES);
+         vd.setBlock(x, y, z + treeHeight, Material.LEAVES);
 
-         const canopyRadius = 3;
-         // Grow a little tree-top made of leaves around the top of the tree
-         for (let dx = -canopyRadius; dx <= canopyRadius; dx++) {
-            for (let dz = -canopyRadius; dz <= canopyRadius; dz++) {
-               // Check if the block is within a circle of radius canopyRadius
-               if (dx * dx + dz * dz <= canopyRadius * canopyRadius) {
-                  // Set the block to leaves
-                  vd.setBlock(x + dx, y + treeHeight, z + dz, Material.LEAVES);
+         // Grow a square of leaves around the WOOD block right below the top of the tree
+         for (let i = -1; i <= 1; i++) {
+            for (let j = -1; j <= 1; j++) {
+               vd.setBlock(x + i, y + j, z - treeHeight + 1, Material.LEAVES);
+            }
+         }
+
+         // Grow a 2-block-thick, 2-block-tall square of leaves below
+         for (let h = 1; h <= 2; h++) {
+            for (let i = -2; i <= 2; i++) {
+               for (let j = -2; j <= 2; j++) {
+                  vd.setBlock(x + i, y + j, z - treeHeight - h, Material.LEAVES);
                }
             }
          }
+         */
       }
    }
    catch {
@@ -31677,7 +31817,7 @@ module.exports = function rgb2gray (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_28_arg0_=0!==_inline_28_arg2_[0]&&0!==_inline_28_arg2_[1]?_inline_28_arg1_+_inline_28_arg4_+_inline_28_arg5_-_inline_28_arg3_:0===_inline_28_arg2_[0]&&0===_inline_28_arg2_[1]?_inline_28_arg1_:0===_inline_28_arg2_[0]?_inline_28_arg1_+_inline_28_arg5_:_inline_28_arg1_+_inline_28_arg4_}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Sum Area Table, also known as the integral of the image
@@ -31777,7 +31917,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_25_q=_inline_25_arg2_+2*_inline_25_arg3_+_inline_25_arg4_-_inline_25_arg7_-2*_inline_25_arg8_-_inline_25_arg9_,_inline_25_s=_inline_25_arg2_-_inline_25_arg4_+2*_inline_25_arg5_-2*_inline_25_arg6_+_inline_25_arg7_-_inline_25_arg9_;_inline_25_arg0_=Math.sqrt(_inline_25_s*_inline_25_s+_inline_25_q*_inline_25_q)}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_25_q","_inline_25_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_34_q=_inline_34_arg2_+2*_inline_34_arg3_+_inline_34_arg4_-_inline_34_arg7_-2*_inline_34_arg8_-_inline_34_arg9_,_inline_34_s=_inline_34_arg2_-_inline_34_arg4_+2*_inline_34_arg5_-2*_inline_34_arg6_+_inline_34_arg7_-_inline_34_arg9_;_inline_34_arg0_=Math.sqrt(_inline_34_s*_inline_34_s+_inline_34_q*_inline_34_q)}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_34_q","_inline_34_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
@@ -31816,7 +31956,7 @@ module.exports = function computeSobel (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_34_arg0_=0!==_inline_34_arg2_[0]&&0!==_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_+_inline_34_arg5_-_inline_34_arg3_:0===_inline_34_arg2_[0]&&0===_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_:0===_inline_34_arg2_[0]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg5_:_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_28_arg0_=0!==_inline_28_arg2_[0]&&0!==_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_+_inline_28_arg5_-_inline_28_arg3_:0===_inline_28_arg2_[0]&&0===_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_:0===_inline_28_arg2_[0]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg5_:_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image
