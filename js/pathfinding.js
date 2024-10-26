@@ -26,37 +26,7 @@ const block = (world, ...args) => {
 var isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
 var isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
 
-function getTraversibleNeighbors(world, x, y, z) {
-   var vmd = world.voxelMaterialData;
-   var results = [];
-   function canWalkTo(x, y, z) {
-      return (
-         vmd.isValidCoord(x, y, z) &&
-         isSolid(world, x, y, z)
-      );
-   }
-   function pos(x, y, z) {return {x:x, y:y, z:z}}
-   function visit(x, y, z) {
-      if (canWalkTo(x, y, z)) {
-         results.push(pos(x, y, z));
-      }
-   }
 
-   // forward
-   visit(x, y+1, z);
-   //backward
-   visit(x, y-1, z);
-   //right
-   visit(x+1, y, z);
-   //left
-   visit(x-1, y, z);
-   //up
-   visit(x, y, z-1);
-   //down
-   visit(x, y, z+1);
-
-   return results;
-}
 
 class Node {
    constructor(x, y, z, walkable) {
@@ -133,8 +103,50 @@ class AStar {
     * @param {Node} node
     */
    getNeighbors(node, grid=null) {
-      var neighbors = getTraversibleNeighbors(this.world, node.x, node.y, node.z);
-      return neighbors.map(toNode);
+      if (!this.neighborCache) this.neighborCache = {};
+
+      const nckey = this.poskey(node);
+      if (_.has(this.neighborCache, nckey)) {
+         return this.neighborCache[nckey];
+      }
+
+      const world = this.world;
+      var x = node.x, y = node.y, z = node.z;
+
+      var vmd = world.voxelMaterialData;
+      var results = [];
+      
+      function canWalkTo(x, y, z) {
+         return (
+            vmd.isValidCoord(x, y, z) &&
+            isSolid(world, x, y, z)
+         );
+      }
+
+      function pos(x, y, z) { return { x: x, y: y, z: z } }
+
+      function visit(x, y, z) {
+         if (canWalkTo(x, y, z)) {
+            results.push(pos(x, y, z));
+         }
+      }
+
+      // forward
+      visit(x, y + 1, z);
+      //backward
+      visit(x, y - 1, z);
+      //right
+      visit(x + 1, y, z);
+      //left
+      visit(x - 1, y, z);
+      //up
+      visit(x, y, z - 1);
+      //down
+      visit(x, y, z + 1);
+
+      results = results.map(toNode);
+      this.neighborCache[nckey] = results;
+      return results;
    }
 
    findpath(grid=null) {
