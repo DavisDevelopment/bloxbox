@@ -24,9 +24,21 @@ const Material = module.exports.Material = {
    GRASS: 3,
 
    WOOD: 4,
+   LEAVES: 5,
+   SAPLING: 6,
 
-   //TODO many MANY more material types
+   WATER: 7,
 
+   all() {
+      let result = [];
+      for (let k in Material) {
+         if (k === k.toUpperCase() && typeof Material[k] === 'number') {
+            result.push(k);
+         }
+      }
+
+      return result;
+   },
 
    getMaterialName(material_id) {
       for (let material_name in Material) {
@@ -60,7 +72,12 @@ const Material = module.exports.Material = {
             return '#32CD32';
          case Material.WOOD:
             return '#A0522D';
-
+         case Material.LEAVES:
+            return '#006400';
+         case Material.WATER:
+            return '#0000FF';
+         case Material.SAPLING:
+            return '#FF00FF';
          default:
             throw new Error(`"${mat}"`);
             return '#000000';
@@ -101,6 +118,14 @@ class BlockData {
       return x + (y * this.width) + (z * this.width * this.height);
    }
 
+   //Convert index to 3D coordinates
+   coords(index) {
+      let z = Math.floor(index / (this.width * this.height));
+      let y = Math.floor((index % (this.width * this.height)) / this.width);
+      let x = index % this.width;
+      return [x, y, z];
+   }
+
    // Get the block type at specified coordinates
    getBlock(x, y, z) {
       this.validateCoordinates(x, y, z);
@@ -123,7 +148,13 @@ class BlockData {
       //farts
    }
 
-
+   isValidCoord(x, y, z) {
+      if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
+         //throw new RangeError("Coordinates out of bounds");
+         return false;
+      }
+      return true;
+   }
 
    /*
     return the lowest z-index which has a non-zero value
@@ -138,6 +169,18 @@ class BlockData {
 
       return 0;
    }
+
+   /*
+    Check whether the block at the given coordinates has any non-air blocks above it
+   */
+  isSunlit(x, y, z) {
+    for (let z2 = z + 1; z2 < this.depth; z2++) {
+      if (this.getBlock(x, y, z2) !== 0) {
+        return false;
+      }
+    }
+    return true;
+  }
 
    // Get the dimensions of the block data
    getWidth() {

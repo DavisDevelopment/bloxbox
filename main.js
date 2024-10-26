@@ -1,9 +1,504 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 
+const _ = require('underscore');
+const v = require('./voxeldata');
+const Material = v.Material;
+
+class Task {
+   constructor() {
+
+   }
+
+   tick(person) {
+
+      return this;
+   }
+}
+
+class WalkPath extends Task {
+   constructor(mvmt) {
+      super();
+
+      this.goalpos = {x:x, y:y, z:z};
+   }
+}
+
+
+function find_path(person, start_pos, end_pos) {
+   var path = [];
+
+   var start = {x: start_pos.x, y: start_pos.y};
+   var end = {x: end_pos.x, y: end_pos.y};
+
+   var current = start;
+   while (!_.isEqual(current, end)) {
+      path.push(current);
+
+      if (current.x > end.x) {
+         current.x--;
+      } else if (current.x < end.x) {
+         current.x++;
+      } else if (current.y > end.y) {
+         current.y--;
+      } else if (current.y < end.y) {
+         current.y++;
+      }
+   }
+
+   path.push(end);
+
+   return path;
+}
+
+function a_star(person, start_pos, end_pos) {
+   const world = person.world;
+   const blocks = world.voxelMaterialData;
+
+   function getNeighbors(node) {
+      var neighbors = [];
+      var directions = [
+         { x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 },
+         { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 },
+         { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 }
+      ];
+      directions.forEach(function (dir) {
+         var neighbor = { x: node.x + dir.x, y: node.y + dir.y, z: node.z + dir.z };
+         if (blocks.isValidCoord(neighbor)) {
+            neighbors.push(neighbor);
+         }
+      });
+      console.log(neighbors);
+      return neighbors;
+   }
+
+   var start = start_pos;
+   var end = end_pos;
+
+   var open_set = [start];
+   var came_from = {};
+
+   var g_score = {};
+   g_score[start] = 0;
+
+   var f_score = {};
+   f_score[start] = heuristic(start, end);
+
+    while (open_set.length > 0) {
+      console.log(open_set);
+
+      var current = open_set[0];
+      for (var i = 1; i < open_set.length; i++) {
+         if (f_score[open_set[i]] < f_score[current]) {
+            current = open_set[i];
+         }
+      }
+
+      if (current.x == end.x && current.y == end.y && current.z == end.z) {
+         var path = [current];
+         while (current in came_from) {
+            current = came_from[current];
+            path.unshift(current);
+         }
+         return path;
+      }
+
+      for (var i = 0; i < open_set.length; i++) {
+         if (open_set[i].x == current.x && open_set[i].y == current.y && open_set[i].z == current.z) {
+            open_set.splice(i,1);
+            break;
+         }
+      }
+
+      // Get a list of the current node's neighbors
+      var neighbors = getNeighbors(current);
+      // For each neighbor, if we haven't visited it yet, or if our current path
+      // to the neighbor is shorter than a previously discovered path, then
+      // update the neighbor's came_from and g_score values
+      for (var i = 0; i < neighbors.length; i++) {
+         var neighbor = neighbors[i];
+
+         var tentative_g_score = g_score[current] + 1;
+
+         if (neighbor in g_score && g_score[neighbor] <= tentative_g_score) {
+            // This neighbor has already been visited and our new path to it
+            // is not shorter than the previously discovered path, so skip it
+            continue;
+         }
+
+         // Set the neighbor's came_from value to the current node
+         came_from[neighbor] = current;
+         // Set the neighbor's g_score value to the tentative g_score
+         g_score[neighbor] = tentative_g_score;
+         // Set the neighbor's f_score value to the g_score plus the heuristic
+         // cost of moving from the neighbor to the end node
+         f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, end);
+
+         // If the neighbor is not already in the open set, add it
+         if (!_.contains(open_set, neighbor)) {
+            open_set.push(neighbor);
+         }
+      }
+   }
+
+   return [];
+}
+
+function heuristic(a, b) {
+   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+}
+
+
+
+_.extend(module.exports, {
+   a_star: a_star
+});
+},{"./voxeldata":6,"underscore":47}],2:[function(require,module,exports){
+
+var nj = require('numjs');
+const $ = require('jquery');
+const w = require('./world');
+var World = w.World;
+var Material = w.Material;
+var TopDownRenderer = require('./render2d').TopDownRenderer;
+
+let world = new World({
+   size: [200, 200, 75]
+});
+
+console.log(world);
+
+let renderer = new TopDownRenderer(world);
+
+window['renderer'] = renderer;
+
+// const numSamples = 50;
+
+// var totalTime = 0;
+// for (let i = 0; i < numSamples; i++) {
+//    const startTime = performance.now();
+//    renderer.sample_voxels_topdown();
+//    const endTime = performance.now();
+//    totalTime += endTime - startTime;
+// }
+// const averageTime = totalTime / numSamples;
+// console.log(`Average time: ${averageTime}ms`);
+
+// begin the actual render-loop
+renderer.render_loop();
+
+/*
+var Renderer3d = require('./render3d').Renderer3d;
+
+let canvas = document.getElementById('box-canvas');
+let renderer = new Renderer3d(canvas, world);
+*/
+
+},{"./render2d":5,"./world":7,"jquery":17,"numjs":43}],3:[function(require,module,exports){
+
+const _ = require('underscore');
+const v = require('./voxeldata');
+const Material = v.Material;
+
+const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
+
+// solid materials. e.g. materials which can be walked on, but not walked through
+const solid_materials = _.without(Material.all().map(x=>x.toLowerCase()), ...non_solids).map(Material.getMaterialByName);
+
+const directions = [
+   { x: 0, y: 1, z: 0 },   // Forward
+   { x: 0, y: -1, z: 0 },  // Backward
+   { x: 1, y: 0, z: 0 },   // Right
+   { x: -1, y: 0, z: 0 },  // Left
+   { x: 0, y: 0, z: -1 },   // Up
+   { x: 0, y: 0, z: 1 },  // Down
+];
+
+const block = (world, ...args) => {
+   if (world.voxelMaterialData.isValidCoord(...args)) {
+      return world.getBlock(...args);
+   }
+   return null;
+};
+var isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
+var isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
+
+function getTraversibleNeighbors(world, x, y, z) {
+   var vmd = world.voxelMaterialData;
+   var results = [];
+   function canWalkTo(x, y, z) {
+      return (
+         vmd.isValidCoord(x, y, z) &&
+         isSolid(world, x, y, z)
+      );
+   }
+   function pos(x, y, z) {return {x:x, y:y, z:z}}
+   function visit(x, y, z) {
+      if (canWalkTo(x, y, z)) {
+         results.push(pos(x, y, z));
+      }
+   }
+
+   // forward
+   visit(x, y+1, z);
+   //backward
+   visit(x, y-1, z);
+   //right
+   visit(x+1, y, z);
+   //left
+   visit(x-1, y, z);
+   //up
+   visit(x, y, z-1);
+   //down
+   visit(x, y, z+1);
+
+   return results;
+}
+
+class Node {
+   constructor(x, y, z, walkable) {
+      if (typeof x === 'undefined') throw new Error(`x=${x}`);
+      if (typeof y === 'undefined') throw new Error(`y=${y}`);
+      if (typeof z === 'undefined') throw new Error(`z=${z}`);
+
+      this.x = x;
+      this.y = y;
+      this.z = z;
+
+      this.walkable = walkable;
+      this.gCost = Infinity; // Cost from start to this node
+      this.hCost = 0; // Heuristic cost to end node
+      this.parent = null; // For path reconstruction
+   }
+
+   get fCost() {
+      return this.gCost + this.hCost;
+   }
+}
+
+const toNode = (pos) => {
+   if (pos instanceof Node) {
+      return pos;
+   } else {
+      return new Node(pos.x, pos.y, pos.z, true);
+   }
+}
+
+class AStar {
+   constructor(world, start_pos, end_pos) {
+      this.world = world;
+      this.start_pos = start_pos;
+      this.end_pos = end_pos;
+
+      // this.visited = Set();
+   }
+
+   poskey(pos) {
+      return `${pos.x},${pos.y},${pos.z}`;
+   }
+
+   heuristic(a, b) {
+      // Using Manhattan distance for 3D
+      return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+   }
+
+   visit(pos) {
+      if (this.visited.has(poskey(pos))) {
+         return true;
+      }
+
+      // Check if the position is valid
+      if (!this.world.voxelMaterialData.isValidCoord(pos.x, pos.y, pos.z)) {
+         return false;
+      }
+
+      // do the stuff
+
+      // record that we've already visited this position
+      this.visited.add(poskey(pos));
+      
+      // Return true if the visit was successful
+      return true;
+   }
+
+   reconstructPath(node) {
+      //TODO
+   }
+
+   /**
+    * get list of Nodes representing valid coordinate nodes which are accessibly adjacent to the given node
+    * @param {Node} node
+    */
+   getNeighbors(node, grid=null) {
+      var neighbors = getTraversibleNeighbors(this.world, node.x, node.y, node.z);
+      return neighbors.map(toNode);
+   }
+
+   findpath(grid=null) {
+
+      const openSet = [];
+      const closedSet = new Set();
+
+      var start = toNode(this.start_pos);
+      var end = toNode(this.end_pos);
+
+      openSet.push(start);
+
+      start.gCost = 0;
+      start.hCost = this.heuristic(start, end);
+
+      while (openSet.length > 0) {
+         // Sort openSet to get the node with the lowest fCost
+         openSet.sort((a, b) => a.fCost - b.fCost);
+         
+         // yunk said node off the beginning of the list
+         const currentNode = openSet.shift();
+
+         // if currentNode is the goal point
+         if (pteq(currentNode, end)) {
+            // Reconstruct the path
+            const path = [];
+
+            let temp = currentNode;
+            while (temp) {
+               path.push(temp);
+               temp = temp.parent;
+            }
+            
+            // Return the path from start to end
+            return path.reverse(); 
+         }
+
+         // assuming we haven't reached the end yet
+
+         // 'close' current node
+         closedSet.add(currentNode);
+
+         const neighbors = this.getNeighbors(currentNode);
+
+         if (neighbors.length == 0) {
+            throw new Error('there should always be neighbors');
+         }
+
+         for (const neighbor of neighbors) {
+            // if `neighbor` is in `closedSet`
+            if (_.any(closedSet, x => pteq(x, neighbor))) {
+               continue;
+            }
+
+
+            const tentativeGCost = currentNode.gCost + 1; // Assuming each step cost is 1
+
+            if (tentativeGCost < neighbor.gCost) {
+               neighbor.parent = currentNode;
+               neighbor.gCost = tentativeGCost;
+               neighbor.hCost = this.heuristic(neighbor, end);
+
+               if (!openSet.includes(neighbor)) {
+                  openSet.push(neighbor);
+               }
+            }
+         }
+      }
+
+      // Return an empty path if no path is found
+      return []; 
+   }
+}
+
+module.exports.AStar = AStar;
+
+function pteq(a, b) {
+   return a.x === b.x && a.y === b.y && a.z === b.z;
+}
+module.exports.pteq = pteq;
+},{"./voxeldata":6,"underscore":47}],4:[function(require,module,exports){
+
+const _ = require('underscore');
+const v = require('./voxeldata');
+const Material = v.Material;
+const behavior = require('./behavior');
+
+class Entity {
+   //
+}
+
+class Person extends Entity {
+   //TODO constructor
+   constructor() {
+      super();
+
+      this.pos = {x:0, y:0, z:0};
+
+      this.territory = null;
+      this.master = null;
+   }
+
+   setPos(x, y, z) {
+      if (x != null) {
+         this.pos.x = x;
+      }
+      if (y != null) {
+         this.pos.y = y;
+      }
+      if (z != null) {
+         this.pos.z = z;
+      }
+   }
+
+   movePos(x, y, z) {
+      this.setPos(
+         this.pos.x + (x !== null ? x : 0),
+         this.pos.y + (y !== null ? y : 0),
+         this.pos.z + (z !== null ? z : 0)
+      );
+   }
+
+   isLandOwner() {
+      if (this.territory === null) {
+         return false;
+      }
+      else if (this.master == null) {
+         return true;
+      }
+      else {
+         return false;
+      }
+   }
+
+   getKing() {
+      if (this.master === null) {
+         return this;
+      }
+      
+      return this.master.getKing();
+   }
+
+   tick(world, n) {
+      this.world = world;
+
+      const blocks = world.voxelMaterialData;
+
+      if (!this._activePath) {
+         var targetPos = { x: 0, y: 0, z: blocks.getSunlitBlockAt(0, 0) };
+         var ast = new pf.AStar(this.world, _.clone(this.pos), targetPos);
+
+         this._activePath = ast.findpath();
+
+         console.log(this._activePath);
+      }
+   }
+}
+
+const pf = require('./pathfinding');
+
+
+module.exports['Person'] = Person;
+},{"./behavior":1,"./pathfinding":3,"./voxeldata":6,"underscore":47}],5:[function(require,module,exports){
 var nj = require('numjs');
 const $ = require('jquery');
 
 var w = require('./world');
+var Person = require('./person').Person;
 const Material = w.Material;
 const World = w.World;
 
@@ -17,7 +512,7 @@ class Rect {
 }
 
 class ViewRect extends Rect {
-   constructor(x, y, width, height, zoomFactor=1.0) {
+   constructor(x, y, width, height, zoomFactor = 1.0) {
       super(x, y, width, height);
       this.zoomFactor = zoomFactor;
    }
@@ -31,7 +526,7 @@ class TopDownRenderer {
       if (!world) {
          world = new world();
       }
-      
+
       this.world = world;
       this.viewRect = new ViewRect(0, 0, world.getWidth(), world.getHeight());
 
@@ -128,21 +623,29 @@ class TopDownRenderer {
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
       let worldY = Math.floor((y - me.viewRect.y) / blockSize);
 
-      // Select the block at the clicked position
-      const z = this.topBlocks.get(worldX, worldY);
+      try {
+         // Select the block at the clicked position
+         const z = this.topBlocks.get(worldX, worldY);
 
-      const selectedBlock = this.world.getBlock(worldX, worldY, z);
-
-      if (selectedBlock !== 0) { // Assuming 0 represents an empty block
-         vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
-         if (z - 1 >= 0) {
-            me.topBlocks.set(worldX, worldY, z-1);
+         const selectedBlock = this.world.getBlock(worldX, worldY, z);
+         if (selectedBlock !== 0) { // Assuming 0 represents an empty block
+            vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
+            if (z - 1 >= 0) {
+               me.topBlocks.set(worldX, worldY, z - 1);
+            }
+   
+            console.log(`Removed block at (${worldX}, ${worldY})`);
          }
-
-         console.log(`Removed block at (${worldX}, ${worldY})`);
-      } 
-      else {
-         console.log(`No block exists at (${worldX}, ${worldY})`);
+         else {
+            console.log(`No block exists at (${worldX}, ${worldY})`);
+         }
+   
+         var guy = new Person();
+         guy.setPos(worldX, worldY, z);
+         me.world.entities.push(guy);
+      }
+      catch {
+         return ;
       }
    }
 
@@ -166,7 +669,8 @@ class TopDownRenderer {
       var blockSize = 2;
       blockSize *= (this.viewRect.zoomFactor);
 
-      //TODO probably need to improve caching logic
+      this.world.tick(1);
+
       for (let x = 0; x < width; x++) {
          for (let y = 0; y < height; y++) {
             let z = this.topBlocks.get(x, y);
@@ -175,11 +679,11 @@ class TopDownRenderer {
                z = vmd.getSunlitBlockAt(x, y);
                this.topBlocks.set(x, y, z);
             }
-            
+
             if (typeof z === 'undefined') {
                z = 0;
             }
-            
+
             let material = vmd.getBlock(x, y, z);
 
             let cell_color = Material.getColorOf(material);
@@ -187,7 +691,7 @@ class TopDownRenderer {
             if (cell_color === '#000000') {
                continue;
             }
-            
+
             c.fillStyle = cell_color;
             // console.log(c.fillStyle);
 
@@ -197,44 +701,23 @@ class TopDownRenderer {
             c.fillRect(displX, diplY, blockSize, blockSize);
          }
       }
+
+      // Draw little circles to represent the Persons in `this.world.entities`
+      this.world.entities.forEach(entity => {
+         let displX = (entity.pos.x * blockSize) + this.viewRect.x;
+         let diplY = (entity.pos.y * blockSize) + this.viewRect.y;
+         
+         c.beginPath();
+         c.arc(displX + blockSize / 2, diplY + blockSize / 2, blockSize / 2, 0, 2 * Math.PI);
+         c.fillStyle = 'red'; // Example color for the person
+         c.fill();
+      });
    }
 }
 
-
-let world = new World({
-   size: [500, 500, 75]
-});
-
-console.log(world);
-
-
-let renderer = new TopDownRenderer(world);
-
-window['renderer'] = renderer;
-
-const numSamples = 50;
-
-var totalTime = 0;
-for (let i = 0; i < numSamples; i++) {
-   const startTime = performance.now();
-   renderer.sample_voxels_topdown();
-   const endTime = performance.now();
-   totalTime += endTime - startTime;
-}
-const averageTime = totalTime / numSamples;
-console.log(`Average time: ${averageTime}ms`);
-
-// begin the actual render-loop
-renderer.render_loop();
-
-/*
-var Renderer3d = require('./render3d').Renderer3d;
-
-let canvas = document.getElementById('box-canvas');
-let renderer = new Renderer3d(canvas, world);
-*/
-
-},{"./world":3,"jquery":12,"numjs":38}],2:[function(require,module,exports){
+module.exports['TopDownRenderer'] = TopDownRenderer;
+// module.exports
+},{"./person":4,"./world":7,"jquery":17,"numjs":43}],6:[function(require,module,exports){
 (function (Buffer){(function (){
 
 
@@ -262,9 +745,21 @@ const Material = module.exports.Material = {
    GRASS: 3,
 
    WOOD: 4,
+   LEAVES: 5,
+   SAPLING: 6,
 
-   //TODO many MANY more material types
+   WATER: 7,
 
+   all() {
+      let result = [];
+      for (let k in Material) {
+         if (k === k.toUpperCase() && typeof Material[k] === 'number') {
+            result.push(k);
+         }
+      }
+
+      return result;
+   },
 
    getMaterialName(material_id) {
       for (let material_name in Material) {
@@ -298,7 +793,12 @@ const Material = module.exports.Material = {
             return '#32CD32';
          case Material.WOOD:
             return '#A0522D';
-
+         case Material.LEAVES:
+            return '#006400';
+         case Material.WATER:
+            return '#0000FF';
+         case Material.SAPLING:
+            return '#FF00FF';
          default:
             throw new Error(`"${mat}"`);
             return '#000000';
@@ -339,6 +839,14 @@ class BlockData {
       return x + (y * this.width) + (z * this.width * this.height);
    }
 
+   //Convert index to 3D coordinates
+   coords(index) {
+      let z = Math.floor(index / (this.width * this.height));
+      let y = Math.floor((index % (this.width * this.height)) / this.width);
+      let x = index % this.width;
+      return [x, y, z];
+   }
+
    // Get the block type at specified coordinates
    getBlock(x, y, z) {
       this.validateCoordinates(x, y, z);
@@ -357,6 +865,16 @@ class BlockData {
       if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
          throw new RangeError("Coordinates out of bounds");
       }
+      //farts
+      //farts
+   }
+
+   isValidCoord(x, y, z) {
+      if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
+         //throw new RangeError("Coordinates out of bounds");
+         return false;
+      }
+      return true;
    }
 
    /*
@@ -372,6 +890,18 @@ class BlockData {
 
       return 0;
    }
+
+   /*
+    Check whether the block at the given coordinates has any non-air blocks above it
+   */
+  isSunlit(x, y, z) {
+    for (let z2 = z + 1; z2 < this.depth; z2++) {
+      if (this.getBlock(x, y, z2) !== 0) {
+        return false;
+      }
+    }
+    return true;
+  }
 
    // Get the dimensions of the block data
    getWidth() {
@@ -401,13 +931,15 @@ const blockType = world.getBlock(1, 2, 3);
 console.log("Block type at (1, 2, 3):", blockType);
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":45}],3:[function(require,module,exports){
+},{"buffer":50}],7:[function(require,module,exports){
 
 var nj = require('numjs');
 var _ = require('underscore');
 var vd = require('./voxeldata');
 var Material = vd.Material;
 var BlockData = vd.BlockData;
+
+var gen = require('./worldgen');
 
 class World {
    constructor(config) {
@@ -427,6 +959,8 @@ class World {
          voxel_matrix_shape[1],
          voxel_matrix_shape[2]
       );
+
+      this.entities = new Array();
 
       this.initialize_flatgrass();
    }
@@ -467,11 +1001,101 @@ class World {
          }
       }
    }
+
+   /**
+    * Handle moment-to-moment world logic, like the growing of trees
+    * and the processing of game ticks for Entities roaming about in our world
+    * 
+    * @param {int} n number of frames to process
+    */
+   tick(n) {
+      // block-related logic
+      for (let i = 0; i < this.voxelMaterialData.blocks.length; i++) {
+         var mat = this.voxelMaterialData.blocks[i];
+
+         // occasionally plant saplings on top of 'sunlit' grass blocks
+         if (mat == Material.GRASS && Math.random() < 0.002) {
+            var coords = this.voxelMaterialData.coords(i);
+
+            // Check if the block above is directly under open sky before planting sapling
+            if (this.voxelMaterialData.isSunlit(coords[0], coords[1], coords[2] + 1)) {
+               // plant the sapling
+               this.voxelMaterialData.setBlock(coords[0], coords[1], coords[2] + 1, Material.SAPLING);
+            }
+         }
+
+         // occasionally grow saplings into trees
+         if (mat == Material.SAPLING && Math.random() < 0.013) {
+            var coords = this.voxelMaterialData.coords(i);
+            gen.grow_tree(this, coords[0], coords[1], coords[2]);
+         }
+      }
+
+      // entity-related logic
+      for (let j = 0; j < this.entities.length; j++) {
+         let e = this.entities[j];
+
+         if (typeof e.tick !== 'function') {
+            continue;
+         }
+
+         e.tick(this, n);
+      }
+   }
 }
 
 module['exports']['World'] = World;
 module['exports']['Material'] = Material;
-},{"./voxeldata":2,"numjs":38,"underscore":42}],4:[function(require,module,exports){
+},{"./voxeldata":6,"./worldgen":8,"numjs":43,"underscore":47}],8:[function(require,module,exports){
+
+var v = require('./voxeldata');
+var Material = v.Material;
+// var World = require('./world').World;
+
+/**
+ * Grows a tree at a given position in the world. The tree is grown
+ * upwards, centered on the specified position, and consists of a
+ * trunk and a canopy of leaves.
+ * @param {World} world world to grow the tree in
+ * @param {number} x x position of the tree
+ * @param {number} y y position of the tree
+ * @param {number} z z position of the tree
+ */
+function grow_tree(world, x, y, z) {
+   try {
+      const vd = world.voxelMaterialData;
+
+      // Check if the block at the specified position is a sapling
+      if (vd.getBlock(x, y, z) === Material.SAPLING) {
+         // Grow a tree
+         const treeHeight = 5;
+         for (let i = 0; i < treeHeight; i++) {
+            // Set each block in the tree to wood
+            vd.setBlock(x, y + i, z, Material.WOOD);
+         }
+
+         // Set the top block of the tree to leaves
+         vd.setBlock(x, y + treeHeight, z, Material.LEAVES);
+
+         const canopyRadius = 3;
+         // Grow a little tree-top made of leaves around the top of the tree
+         for (let dx = -canopyRadius; dx <= canopyRadius; dx++) {
+            for (let dz = -canopyRadius; dz <= canopyRadius; dz++) {
+               // Check if the block is within a circle of radius canopyRadius
+               if (dx * dx + dz * dz <= canopyRadius * canopyRadius) {
+                  // Set the block to leaves
+                  vd.setBlock(x + dx, y + treeHeight, z + dz, Material.LEAVES);
+               }
+            }
+         }
+      }
+   }
+   catch {
+      return ;
+   }
+}
+module.exports['grow_tree'] = grow_tree;
+},{"./voxeldata":6}],9:[function(require,module,exports){
 /**
  * Bit twiddling hacks for JavaScript.
  *
@@ -677,7 +1301,7 @@ exports.nextCombination = function(v) {
 }
 
 
-},{}],5:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 "use strict"
 
 var createThunk = require("./lib/thunk.js")
@@ -788,7 +1412,7 @@ function compileCwise(user_args) {
 
 module.exports = compileCwise
 
-},{"./lib/thunk.js":7}],6:[function(require,module,exports){
+},{"./lib/thunk.js":12}],11:[function(require,module,exports){
 "use strict"
 
 var uniq = require("uniq")
@@ -1148,7 +1772,7 @@ function generateCWiseOp(proc, typesig) {
 }
 module.exports = generateCWiseOp
 
-},{"uniq":43}],7:[function(require,module,exports){
+},{"uniq":48}],12:[function(require,module,exports){
 "use strict"
 
 // The function below is called when constructing a cwise function object, and does the following:
@@ -1236,9 +1860,9 @@ function createThunk(proc) {
 
 module.exports = createThunk
 
-},{"./compile.js":6}],8:[function(require,module,exports){
+},{"./compile.js":11}],13:[function(require,module,exports){
 module.exports = require("cwise-compiler")
-},{"cwise-compiler":5}],9:[function(require,module,exports){
+},{"cwise-compiler":10}],14:[function(require,module,exports){
 "use strict"
 
 function dupe_array(count, value, i) {
@@ -1288,7 +1912,7 @@ function dupe(count, value) {
 }
 
 module.exports = dupe
-},{}],10:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 "use strict"
 
 function iota(n) {
@@ -1300,7 +1924,7 @@ function iota(n) {
 }
 
 module.exports = iota
-},{}],11:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -1323,7 +1947,7 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],12:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -12041,7 +12665,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],13:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 (function (global){(function (){
 /**
  * @license
@@ -29254,7 +29878,7 @@ return jQuery;
 }.call(this));
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],14:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 'use strict'
 
 var ops = require('ndarray-ops')
@@ -29337,7 +29961,7 @@ function ndfft(dir, x, y) {
 }
 
 module.exports = ndfft
-},{"./lib/fft-matrix.js":15,"ndarray":19,"ndarray-ops":18,"typedarray-pool":41}],15:[function(require,module,exports){
+},{"./lib/fft-matrix.js":20,"ndarray":24,"ndarray-ops":23,"typedarray-pool":46}],20:[function(require,module,exports){
 var bits = require('bit-twiddle')
 
 function fft(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
@@ -29556,7 +30180,7 @@ function fftBluestein(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
   }
 }
 
-},{"bit-twiddle":4}],16:[function(require,module,exports){
+},{"bit-twiddle":9}],21:[function(require,module,exports){
 "use strict"
 
 module.exports = matrixProduct
@@ -29619,7 +30243,7 @@ function matrixProduct(out, a, b, alpha, beta) {
   }
   return proc(out, a, b, alpha, beta)
 }
-},{"./lib/planner.js":17}],17:[function(require,module,exports){
+},{"./lib/planner.js":22}],22:[function(require,module,exports){
 "use strict"
 
 module.exports = generateMatrixProduct
@@ -29899,7 +30523,7 @@ function generateMatrixProduct(outType, aType, bType, useAlpha, useBeta) {
   var proc = new Function(code.join(""))
   return proc()
 }
-},{}],18:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 "use strict"
 
 var compile = require("cwise-compiler")
@@ -30362,7 +30986,7 @@ exports.equals = compile({
 
 
 
-},{"cwise-compiler":5}],19:[function(require,module,exports){
+},{"cwise-compiler":10}],24:[function(require,module,exports){
 var iota = require("iota-array")
 var isBuffer = require("is-buffer")
 
@@ -30713,7 +31337,7 @@ function wrappedNDArrayCtor(data, shape, stride, offset) {
 
 module.exports = wrappedNDArrayCtor
 
-},{"iota-array":10,"is-buffer":11}],20:[function(require,module,exports){
+},{"iota-array":15,"is-buffer":16}],25:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -30721,7 +31345,7 @@ module.exports = {
   nFloatingValues: 5
 };
 
-},{}],21:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -30736,7 +31360,7 @@ module.exports = {
   array: Array
 };
 
-},{}],22:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -30757,7 +31381,7 @@ module.exports = {
   }
 };
 
-},{}],23:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 'use strict';
 
 module.exports = function areaSum (h0, w0, H, W, SAT) {
@@ -30771,7 +31395,7 @@ module.exports = function areaSum (h0, w0, H, W, SAT) {
         : -SAT.selection.get(y1, x0) + SAT.selection.get(y1, x1);
 };
 
-},{}],24:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 'use strict';
 
 var areaSum = require('./area-sum');
@@ -30780,7 +31404,7 @@ module.exports = function areaValue (h0, w0, H, W, SAT) {
   return areaSum(h0, w0, H, W, SAT) / (H * W);
 };
 
-},{"./area-sum":23}],25:[function(require,module,exports){
+},{"./area-sum":28}],30:[function(require,module,exports){
 (function (__dirname){(function (){
 'use strict';
 var path = require('path');
@@ -30852,7 +31476,7 @@ Object.defineProperty(exports, 'moon', {
 module.exports = exports;
 
 }).call(this)}).call(this,"/node_modules/numjs/src/images")
-},{"./read":29,"path":47}],26:[function(require,module,exports){
+},{"./read":34,"path":52}],31:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -30861,7 +31485,7 @@ module.exports = function flipImage (img) {
   return new NdArray(img.selection.step(null, -1));
 };
 
-},{"../ndarray":39}],27:[function(require,module,exports){
+},{"../ndarray":44}],32:[function(require,module,exports){
 'use strict';
 
 /**
@@ -30887,7 +31511,7 @@ module.exports = {
   flip: require('./flip')
 };
 
-},{"./area-sum":23,"./area-value":24,"./data":25,"./flip":26,"./read":29,"./resize":30,"./rgb2gray":31,"./sat":32,"./save":33,"./scharr":34,"./sobel":35,"./ssat":36}],28:[function(require,module,exports){
+},{"./area-sum":28,"./area-value":29,"./data":30,"./flip":31,"./read":34,"./resize":35,"./rgb2gray":36,"./sat":37,"./save":38,"./scharr":39,"./sobel":40,"./ssat":41}],33:[function(require,module,exports){
 'use strict';
 
 
@@ -30911,7 +31535,7 @@ module.exports = function isGrayscaleImage (arr) {
   return false;
 };
 
-},{"../ndarray":39,"cwise/lib/wrapper":8}],29:[function(require,module,exports){
+},{"../ndarray":44,"cwise/lib/wrapper":13}],34:[function(require,module,exports){
 'use strict';
 
 /* global HTMLCanvasElement */
@@ -30965,7 +31589,7 @@ function processImg (img) {
   return new NdArray(hxw);
 }
 
-},{"../errors":22,"../ndarray":39,"./is-grayscale":28,"ndarray":19}],30:[function(require,module,exports){
+},{"../errors":27,"../ndarray":44,"./is-grayscale":33,"ndarray":24}],35:[function(require,module,exports){
 'use strict';
 
 var _ = require('./utils');
@@ -31010,7 +31634,7 @@ module.exports = function resizeImageDom (img, height, width) {
   return new NdArray(hxw);
 };
 
-},{"../ndarray":39,"./utils":37,"ndarray":19}],31:[function(require,module,exports){
+},{"../ndarray":44,"./utils":42,"ndarray":24}],36:[function(require,module,exports){
 'use strict';
 
 
@@ -31046,7 +31670,7 @@ module.exports = function rgb2gray (img) {
   return out;
 };
 
-},{"../ndarray":39,"../utils":40,"cwise/lib/wrapper":8}],32:[function(require,module,exports){
+},{"../ndarray":44,"../utils":45,"cwise/lib/wrapper":13}],37:[function(require,module,exports){
 'use strict';
 
 
@@ -31072,7 +31696,7 @@ module.exports = function computeSumAreaTable (img) {
   return out;
 };
 
-},{"../ndarray":39,"./rgb2gray":31,"cwise/lib/wrapper":8}],33:[function(require,module,exports){
+},{"../ndarray":44,"./rgb2gray":36,"cwise/lib/wrapper":13}],38:[function(require,module,exports){
 'use strict';
 
 var _ = require('./utils');
@@ -31105,7 +31729,7 @@ module.exports = function saveImageDom (img, dest) {
   }
 };
 
-},{"../errors":22,"./utils":37}],34:[function(require,module,exports){
+},{"../errors":27,"./utils":42}],39:[function(require,module,exports){
 'use strict';
 
 
@@ -31114,7 +31738,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_34_q=3*_inline_34_arg2_+10*_inline_34_arg3_+3*_inline_34_arg4_-3*_inline_34_arg7_-10*_inline_34_arg8_-3*_inline_34_arg9_,_inline_34_s=3*_inline_34_arg2_-3*_inline_34_arg4_+10*_inline_34_arg5_-10*_inline_34_arg6_+3*_inline_34_arg7_-3*_inline_34_arg9_;_inline_34_arg0_=Math.sqrt(_inline_34_s*_inline_34_s+_inline_34_q*_inline_34_q)}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_34_q","_inline_34_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=3*_inline_31_arg2_+10*_inline_31_arg3_+3*_inline_31_arg4_-3*_inline_31_arg7_-10*_inline_31_arg8_-3*_inline_31_arg9_,_inline_31_s=3*_inline_31_arg2_-3*_inline_31_arg4_+10*_inline_31_arg5_-10*_inline_31_arg6_+3*_inline_31_arg7_-3*_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Scharr transform.
@@ -31144,7 +31768,7 @@ module.exports = function computeScharr (img) {
   return out.divide(16 * Math.sqrt(2), false);
 };
 
-},{"../ndarray":39,"../utils":40,"./rgb2gray":31,"cwise/lib/wrapper":8,"ndarray-ops":18}],35:[function(require,module,exports){
+},{"../ndarray":44,"../utils":45,"./rgb2gray":36,"cwise/lib/wrapper":13,"ndarray-ops":23}],40:[function(require,module,exports){
 'use strict';
 
 
@@ -31153,7 +31777,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=_inline_31_arg2_+2*_inline_31_arg3_+_inline_31_arg4_-_inline_31_arg7_-2*_inline_31_arg8_-_inline_31_arg9_,_inline_31_s=_inline_31_arg2_-_inline_31_arg4_+2*_inline_31_arg5_-2*_inline_31_arg6_+_inline_31_arg7_-_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_25_q=_inline_25_arg2_+2*_inline_25_arg3_+_inline_25_arg4_-_inline_25_arg7_-2*_inline_25_arg8_-_inline_25_arg9_,_inline_25_s=_inline_25_arg2_-_inline_25_arg4_+2*_inline_25_arg5_-2*_inline_25_arg6_+_inline_25_arg7_-_inline_25_arg9_;_inline_25_arg0_=Math.sqrt(_inline_25_s*_inline_25_s+_inline_25_q*_inline_25_q)}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_25_q","_inline_25_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
@@ -31185,14 +31809,14 @@ module.exports = function computeSobel (img) {
   return out.divide(4 * Math.sqrt(2), false);
 };
 
-},{"../ndarray":39,"../utils":40,"./rgb2gray":31,"cwise/lib/wrapper":8,"ndarray-ops":18}],36:[function(require,module,exports){
+},{"../ndarray":44,"../utils":45,"./rgb2gray":36,"cwise/lib/wrapper":13,"ndarray-ops":23}],41:[function(require,module,exports){
 'use strict';
 
 
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_*_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_34_arg0_=0!==_inline_34_arg2_[0]&&0!==_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_+_inline_34_arg5_-_inline_34_arg3_:0===_inline_34_arg2_[0]&&0===_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_:0===_inline_34_arg2_[0]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg5_:_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image
@@ -31212,7 +31836,7 @@ module.exports = function computeSquaredSumAreaTable (img) {
   return out;
 };
 
-},{"../ndarray":39,"./rgb2gray":31,"cwise/lib/wrapper":8}],37:[function(require,module,exports){
+},{"../ndarray":44,"./rgb2gray":36,"cwise/lib/wrapper":13}],42:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -31331,7 +31955,7 @@ module.exports.setRawData = function setRawData (array, data) {
   }
 };
 
-},{"../ndarray":39}],38:[function(require,module,exports){
+},{"../ndarray":44}],43:[function(require,module,exports){
 'use strict';
 
 var ndarray = require('ndarray');
@@ -32174,7 +32798,7 @@ module.exports = {
   images: require('./images')
 };
 
-},{"./config":20,"./dtypes":21,"./errors":22,"./images":27,"./ndarray":39,"./utils":40,"cwise/lib/wrapper":8,"ndarray":19,"ndarray-fft":14,"ndarray-ops":18}],39:[function(require,module,exports){
+},{"./config":25,"./dtypes":26,"./errors":27,"./images":32,"./ndarray":44,"./utils":45,"cwise/lib/wrapper":13,"ndarray":24,"ndarray-fft":19,"ndarray-ops":23}],44:[function(require,module,exports){
 'use strict';
 
 var ndarray = require('ndarray');
@@ -33240,7 +33864,7 @@ function formatNumber (v) {
   return String(Number((v || 0).toFixed(CONF.nFloatingValues)));
 }
 
-},{"./config":20,"./errors":22,"./utils":40,"cwise/lib/wrapper":8,"ndarray":19,"ndarray-fft":14,"ndarray-gemm":16,"ndarray-ops":18,"typedarray-pool":41}],40:[function(require,module,exports){
+},{"./config":25,"./errors":27,"./utils":45,"cwise/lib/wrapper":13,"ndarray":24,"ndarray-fft":19,"ndarray-gemm":21,"ndarray-ops":23,"typedarray-pool":46}],45:[function(require,module,exports){
 'use strict';
 var DTYPES = require('./dtypes');
 var _ = require('lodash');
@@ -33333,7 +33957,7 @@ module.exports = {
   defaults: _.defaults
 };
 
-},{"./dtypes":21,"lodash":13}],41:[function(require,module,exports){
+},{"./dtypes":26,"lodash":18}],46:[function(require,module,exports){
 (function (global){(function (){
 'use strict'
 
@@ -33588,7 +34212,7 @@ exports.clearCache = function clearCache() {
 }
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"bit-twiddle":4,"buffer":45,"dup":9}],42:[function(require,module,exports){
+},{"bit-twiddle":9,"buffer":50,"dup":14}],47:[function(require,module,exports){
 (function (global){(function (){
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
@@ -35639,7 +36263,7 @@ exports.clearCache = function clearCache() {
 
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],43:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -35698,7 +36322,7 @@ function unique(list, compare, sorted) {
 
 module.exports = unique
 
-},{}],44:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -35850,7 +36474,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],45:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -37631,7 +38255,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":44,"buffer":45,"ieee754":46}],46:[function(require,module,exports){
+},{"base64-js":49,"buffer":50,"ieee754":51}],51:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -37718,7 +38342,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],47:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 (function (process){(function (){
 // 'path' module extracted from Node.js v8.11.1 (only the posix part)
 // transplited with Babel
@@ -38251,7 +38875,7 @@ posix.posix = posix;
 module.exports = posix;
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":48}],48:[function(require,module,exports){
+},{"_process":53}],53:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -38437,4 +39061,4 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}]},{},[1]);
+},{}]},{},[2]);

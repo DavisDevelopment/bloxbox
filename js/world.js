@@ -5,6 +5,8 @@ var vd = require('./voxeldata');
 var Material = vd.Material;
 var BlockData = vd.BlockData;
 
+var gen = require('./worldgen');
+
 class World {
    constructor(config) {
       if (config == null) config = {};
@@ -23,6 +25,8 @@ class World {
          voxel_matrix_shape[1],
          voxel_matrix_shape[2]
       );
+
+      this.entities = new Array();
 
       this.initialize_flatgrass();
    }
@@ -61,6 +65,47 @@ class World {
                }
             }
          }
+      }
+   }
+
+   /**
+    * Handle moment-to-moment world logic, like the growing of trees
+    * and the processing of game ticks for Entities roaming about in our world
+    * 
+    * @param {int} n number of frames to process
+    */
+   tick(n) {
+      // block-related logic
+      for (let i = 0; i < this.voxelMaterialData.blocks.length; i++) {
+         var mat = this.voxelMaterialData.blocks[i];
+
+         // occasionally plant saplings on top of 'sunlit' grass blocks
+         if (mat == Material.GRASS && Math.random() < 0.002) {
+            var coords = this.voxelMaterialData.coords(i);
+
+            // Check if the block above is directly under open sky before planting sapling
+            if (this.voxelMaterialData.isSunlit(coords[0], coords[1], coords[2] + 1)) {
+               // plant the sapling
+               this.voxelMaterialData.setBlock(coords[0], coords[1], coords[2] + 1, Material.SAPLING);
+            }
+         }
+
+         // occasionally grow saplings into trees
+         if (mat == Material.SAPLING && Math.random() < 0.013) {
+            var coords = this.voxelMaterialData.coords(i);
+            gen.grow_tree(this, coords[0], coords[1], coords[2]);
+         }
+      }
+
+      // entity-related logic
+      for (let j = 0; j < this.entities.length; j++) {
+         let e = this.entities[j];
+
+         if (typeof e.tick !== 'function') {
+            continue;
+         }
+
+         e.tick(this, n);
       }
    }
 }
