@@ -192,6 +192,68 @@ class TopDownRenderer {
       });
    }
 
+   // Function to adjust color brightness based on depth
+   adjustColorForDepth(baseColor, z, zmin=null, zmax=null) {
+      zmax = zmax || this.world.data.depth;
+      zmin = zmin || 0;
+
+      if (typeof baseColor === 'string') {
+         baseColor = parseColor(baseColor);
+      }
+
+      let color = baseColor;
+
+      // Calculate a depth factor between 0 and 1, where Z=0 is fully bright, and maxZ is darkest
+      const depthFactor = (z - zmin) / (zmax - zmin);
+
+      // Adjust the RGB channels based on the depth factor
+      const r = Math.floor(color.r * depthFactor);
+      const g = Math.floor(color.g * depthFactor);
+      const b = Math.floor(color.b * depthFactor);
+
+      // Convert to string
+      return `rgb(${r}, ${g}, ${b})`;
+   }
+
+   getColorMap() {
+      const wd = this.world.data;
+      const topBlocks = this.topBlocks;
+      const colormap = [];
+
+      for (let x = 0; x < topBlocks.shape[0]; x++) {
+         colormap[x] = [];
+         
+         for (let y = 0; y < topBlocks.shape[1]; y++) {
+            let material = wd.getBlockType(x, y, topBlocks.get(x, y));
+            var cell_color = Material.getColorOf(material);
+
+            colormap[x][y] = cell_color;
+         }
+      }
+
+      for (let y = 1; y < topBlocks.shape[1] - 1; y++) {
+         for (let x = 0; x < topBlocks.shape[0]; x++) {
+            var z = topBlocks.get(x, y);
+            var z_north = topBlocks.get(x, y - 1), z_south = topBlocks.get(x, y + 1);
+
+            if (z_north < z) {
+               let darkenFactor = 1 - ((z - z_north) * 0.05);
+               let color = parseColor(colormap[x][y]);
+               color.r += (color.r * darkenFactor);
+               color.g += (color.g * darkenFactor);
+               color.b += (color.b * darkenFactor);
+
+               colormap[x][y] = `rgb(${color.r}, ${color.g}, ${color.b})`;
+            }
+            else if (z_south > z) {
+               //TODO
+            }
+         }
+      }
+
+      return colormap;
+   }
+
    sample_voxels_topdown() {
       let world_shape = this.world.data.shape;
       let vmd = this.world.data;
@@ -200,10 +262,13 @@ class TopDownRenderer {
       let c = this.context;
       c.clearRect(0, 0, this.canvasElem.width, this.canvasElem.height);
 
-      var blockSize = 2;
+      var blockSize = 3;
       blockSize *= (this.viewRect.zoomFactor);
 
       this.world.tick(1);
+      var zmin = this.topBlocks.min();
+      var zmax = this.topBlocks.max();
+      let colormap = this.getColorMap();
 
       for (let x = 0; x < width; x++) {
          for (let y = 0; y < height; y++) {
@@ -223,14 +288,9 @@ class TopDownRenderer {
                continue;
             }
 
-            let cell_color = Material.getColorOf(material);
-
-            if (cell_color === '#000000') {
-               continue;
-            }
+            var cell_color = colormap[x][y];
 
             c.fillStyle = cell_color;
-            // console.log(c.fillStyle);
 
             let displX = (x * blockSize) + this.viewRect.x;
             let diplY = (y * blockSize) + this.viewRect.y;
@@ -265,6 +325,65 @@ class TopDownRenderer {
             c.stroke();
          }
       });
+   }
+}
+
+function parseColor(baseColor) {
+   if (typeof baseColor === 'string') {
+      if (baseColor.charAt(0) === '#') { // hex color
+         // Parse hex color and convert to RGB object
+         const bigint = parseInt(baseColor.slice(1), 16);
+         var color = {
+            r: (bigint >> 16) & 255,
+            g: (bigint >> 8) & 255,
+            b: bigint & 255
+         };
+
+         return color;
+      }
+      else {
+         // Attempt to parse CSS color function
+         const match = baseColor.match(/(rgb|argb|rgba)\s*\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:,\s*(\d+(?:\.\d+)?))?\s*\)/i);
+         if (match) {
+            var space = match[1];
+            var num_args = match[5] ? 3 : 4;
+            var args = _.range(num_args).map(i => parseFloat(match[2+i]));
+            var argnames = space.split('');
+            var color = {};
+            for (let i = 0; i < argnames.length; i++) {
+               color[argnames[i]] = args[i];
+            }
+
+            return color;
+         }
+
+         return null;
+      }
+   }
+   else {
+      if (baseColor instanceof Object) {
+         if (baseColor.r !== undefined && baseColor.g !== undefined && baseColor.b !== undefined) {
+            color = {
+               r: baseColor.r,
+               g: baseColor.g,
+               b: baseColor.b
+            };
+         }
+         else if (baseColor.a !== undefined && baseColor.r !== undefined && baseColor.g !== undefined && baseColor.b !== undefined) {
+            color = {
+               a: baseColor.a,
+               r: baseColor.r,
+               g: baseColor.g,
+               b: baseColor.b
+            };
+         }
+         else {
+            throw new Error('Unrecognized color object');
+         }
+      }
+      else {
+         throw new Error('Unrecognized color value');
+      }
    }
 }
 

@@ -56,7 +56,7 @@ class LaunchTask extends Task {
 module.exports.Task=Task;
 module.exports.WalkPath=WalkPath;
 module.exports.LaunchTask=LaunchTask;
-},{"./blockdata":2,"./pathfinding.js":5,"underscore":48}],2:[function(require,module,exports){
+},{"./blockdata":2,"./pathfinding.js":5,"underscore":49}],2:[function(require,module,exports){
 (function (Buffer){(function (){
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -514,7 +514,7 @@ function test_Chunk() {
 run_tests();
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./geometry":3,"assert":50,"buffer":55,"underscore":48}],3:[function(require,module,exports){
+},{"./geometry":3,"assert":51,"buffer":56,"underscore":49}],3:[function(require,module,exports){
 var Rect3D = /** @class */ (function () {
     function Rect3D(x, y, z, length, width, height) {
         this.x = x;
@@ -568,19 +568,99 @@ var TopDownRenderer = require('./render2d').TopDownRenderer;
 let world = new World({
    size: [500, 500, 64*2]
 });
-world.data.forEachBlock({}, (x, y, z) => {
-   if (z === 5) {
-      world.data.setBlockType(x, y, z, Material.GRASS);
-   } 
-   else {
-      world.data.setBlockType(x, y, z, Material.AIR);
+
+
+/**
+ * Generates a noisy altitude map for a flat region of a voxel world.
+ *
+ * @param {number} [noiseScale=0.1] - Controls the scale of the terrain features
+ * @param {number} [heightFactor=25] - Maximum height variation for the terrain
+ *
+ * @returns {number[][]} - A 2D array of altitude values for each block in the region
+ */
+function noisyAltitude(noiseScale=0.1, heightFactor=25, smoothingFactor=0) {
+   var sn = require('simplex-noise');
+
+   // Initialize noise generator
+   const noise = sn.createNoise2D();
+
+   // Function to determine height (Z position) of each block
+   function getHeight(x, y) {
+      // Generate noise value for (x, y), scaled by `noiseScale`
+      const noiseValue = noise(x * noiseScale, y * noiseScale);
+
+      // Map noise value (-1 to 1) to altitude (0 to heightFactor)
+      let sea_level = Math.floor(world.getDepth() * 0.5);
+      
+      return sea_level + Math.floor((noiseValue + 1) / 2 * heightFactor);
    }
-});
-console.log(world.data.getBlockType(33, 33, 5));
+
+   // Generate terrain for a flat region
+   const regionWidth = world.data.width;   // Width of the region
+   const regionHeight = world.data.height;   // Height of the region
+   const terrain/*: number[][]*/ = []; // Stores height map of the terrain
+
+   for (let x = 0; x < regionWidth; x++) {
+      terrain[x] = [];
+
+      for (let y = 0; y < regionHeight; y++) {
+         terrain[x][y] = getHeight(x, y);
+      }
+   }
+
+   // Apply smoothing to the terrain
+   if (smoothingFactor > 0) {
+      // This algorithm takes each block in the terrain and replaces its height with the average of its height and the heights of its four neighbors (N, S, E, W)
+      // This is done in a way that is more efficient than using nested for-loops with (x, y) coordinates
+      // Instead, we use a single loop and calculate the new height for each block as the average of the heights of the blocks in its neighborhood
+      for (let x = 0; x < regionWidth; x++) {
+         for (let y = 0; y < regionHeight; y++) {
+            // Calculate the average height of the block and its neighbors
+            // Start with the height of the block itself
+            let heightSum = terrain[x][y];
+            
+            // Add the heights of the neighbors to the sum
+            // We only add the heights of neighbors that exist (i.e. those that are not out of bounds)
+            if (x > 0) {
+               heightSum += terrain[x-1][y];
+            }
+            if (x < regionWidth-1) {
+               heightSum += terrain[x+1][y];
+            }
+            if (y > 0) {
+               heightSum += terrain[x][y-1];
+            }
+            if (y < regionHeight-1) {
+               heightSum += terrain[x][y+1];
+            }
+            
+            // Calculate the average height by dividing the sum by the number of neighbors (plus one for the block itself)
+            // Use Math.floor to round down to the nearest integer
+            terrain[x][y] = Math.floor(heightSum / (1 + (x > 0 ? 1 : 0) + (x < regionWidth-1 ? 1 : 0) + (y > 0 ? 1 : 0) + (y < regionHeight-1 ? 1 : 0)));
+         }
+      }
+   }
+
+   // You can now use `terrain[x][y]` to set the height of voxels in your world.
+   console.log(terrain);
+
+   return terrain;
+}
+
+var hillZ = noisyAltitude(0.32, 25, 1);
+
+for (let x = 0; x < world.data.width; x++) {
+   for (let y = 0; y < world.data.height; y++) {
+      let z = hillZ[x][y];
+      world.data.setBlockType(x, y, z, Material.GRASS);
+   }
+}
 
 let renderer = new TopDownRenderer(world);
 
 window['renderer'] = renderer;
+
+function reNoiseAltitude(noiseScale, heightFactor, smoothingFactor) {}
 
 // const numSamples = 50;
 
@@ -604,7 +684,7 @@ let canvas = document.getElementById('box-canvas');
 let renderer = new Renderer3d(canvas, world);
 */
 
-},{"./render2d":7,"./world":8,"jquery":18,"numjs":44}],5:[function(require,module,exports){
+},{"./render2d":7,"./world":8,"jquery":18,"numjs":44,"simplex-noise":47}],5:[function(require,module,exports){
 
 const _ = require('underscore');
 const v = require('./blockdata');
@@ -999,7 +1079,7 @@ function dist3d(ax, ay, az, bx, by, bz) {
    return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-},{"./blockdata":2,"./geometry":3,"underscore":48}],6:[function(require,module,exports){
+},{"./blockdata":2,"./geometry":3,"underscore":49}],6:[function(require,module,exports){
 
 const _ = require('underscore');
 const v = require('./blockdata');
@@ -1079,7 +1159,7 @@ const pf = require('./pathfinding');
 
 
 module.exports['Person'] = Person;
-},{"./behavior":1,"./blockdata":2,"./pathfinding":5,"underscore":48}],7:[function(require,module,exports){
+},{"./behavior":1,"./blockdata":2,"./pathfinding":5,"underscore":49}],7:[function(require,module,exports){
 var nj = require('numjs');
 const $ = require('jquery');
 
@@ -1274,6 +1354,68 @@ class TopDownRenderer {
       });
    }
 
+   // Function to adjust color brightness based on depth
+   adjustColorForDepth(baseColor, z, zmin=null, zmax=null) {
+      zmax = zmax || this.world.data.depth;
+      zmin = zmin || 0;
+
+      if (typeof baseColor === 'string') {
+         baseColor = parseColor(baseColor);
+      }
+
+      let color = baseColor;
+
+      // Calculate a depth factor between 0 and 1, where Z=0 is fully bright, and maxZ is darkest
+      const depthFactor = (z - zmin) / (zmax - zmin);
+
+      // Adjust the RGB channels based on the depth factor
+      const r = Math.floor(color.r * depthFactor);
+      const g = Math.floor(color.g * depthFactor);
+      const b = Math.floor(color.b * depthFactor);
+
+      // Convert to string
+      return `rgb(${r}, ${g}, ${b})`;
+   }
+
+   getColorMap() {
+      const wd = this.world.data;
+      const topBlocks = this.topBlocks;
+      const colormap = [];
+
+      for (let x = 0; x < topBlocks.shape[0]; x++) {
+         colormap[x] = [];
+         
+         for (let y = 0; y < topBlocks.shape[1]; y++) {
+            let material = wd.getBlockType(x, y, topBlocks.get(x, y));
+            var cell_color = Material.getColorOf(material);
+
+            colormap[x][y] = cell_color;
+         }
+      }
+
+      for (let y = 1; y < topBlocks.shape[1] - 1; y++) {
+         for (let x = 0; x < topBlocks.shape[0]; x++) {
+            var z = topBlocks.get(x, y);
+            var z_north = topBlocks.get(x, y - 1), z_south = topBlocks.get(x, y + 1);
+
+            if (z_north < z) {
+               let darkenFactor = 1 - ((z - z_north) * 0.05);
+               let color = parseColor(colormap[x][y]);
+               color.r += (color.r * darkenFactor);
+               color.g += (color.g * darkenFactor);
+               color.b += (color.b * darkenFactor);
+
+               colormap[x][y] = `rgb(${color.r}, ${color.g}, ${color.b})`;
+            }
+            else if (z_south > z) {
+               //TODO
+            }
+         }
+      }
+
+      return colormap;
+   }
+
    sample_voxels_topdown() {
       let world_shape = this.world.data.shape;
       let vmd = this.world.data;
@@ -1282,10 +1424,13 @@ class TopDownRenderer {
       let c = this.context;
       c.clearRect(0, 0, this.canvasElem.width, this.canvasElem.height);
 
-      var blockSize = 2;
+      var blockSize = 3;
       blockSize *= (this.viewRect.zoomFactor);
 
       this.world.tick(1);
+      var zmin = this.topBlocks.min();
+      var zmax = this.topBlocks.max();
+      let colormap = this.getColorMap();
 
       for (let x = 0; x < width; x++) {
          for (let y = 0; y < height; y++) {
@@ -1305,14 +1450,9 @@ class TopDownRenderer {
                continue;
             }
 
-            let cell_color = Material.getColorOf(material);
-
-            if (cell_color === '#000000') {
-               continue;
-            }
+            var cell_color = colormap[x][y];
 
             c.fillStyle = cell_color;
-            // console.log(c.fillStyle);
 
             let displX = (x * blockSize) + this.viewRect.x;
             let diplY = (y * blockSize) + this.viewRect.y;
@@ -1347,6 +1487,65 @@ class TopDownRenderer {
             c.stroke();
          }
       });
+   }
+}
+
+function parseColor(baseColor) {
+   if (typeof baseColor === 'string') {
+      if (baseColor.charAt(0) === '#') { // hex color
+         // Parse hex color and convert to RGB object
+         const bigint = parseInt(baseColor.slice(1), 16);
+         var color = {
+            r: (bigint >> 16) & 255,
+            g: (bigint >> 8) & 255,
+            b: bigint & 255
+         };
+
+         return color;
+      }
+      else {
+         // Attempt to parse CSS color function
+         const match = baseColor.match(/(rgb|argb|rgba)\s*\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:,\s*(\d+(?:\.\d+)?))?\s*\)/i);
+         if (match) {
+            var space = match[1];
+            var num_args = match[5] ? 3 : 4;
+            var args = _.range(num_args).map(i => parseFloat(match[2+i]));
+            var argnames = space.split('');
+            var color = {};
+            for (let i = 0; i < argnames.length; i++) {
+               color[argnames[i]] = args[i];
+            }
+
+            return color;
+         }
+
+         return null;
+      }
+   }
+   else {
+      if (baseColor instanceof Object) {
+         if (baseColor.r !== undefined && baseColor.g !== undefined && baseColor.b !== undefined) {
+            color = {
+               r: baseColor.r,
+               g: baseColor.g,
+               b: baseColor.b
+            };
+         }
+         else if (baseColor.a !== undefined && baseColor.r !== undefined && baseColor.g !== undefined && baseColor.b !== undefined) {
+            color = {
+               a: baseColor.a,
+               r: baseColor.r,
+               g: baseColor.g,
+               b: baseColor.b
+            };
+         }
+         else {
+            throw new Error('Unrecognized color object');
+         }
+      }
+      else {
+         throw new Error('Unrecognized color value');
+      }
    }
 }
 
@@ -1494,7 +1693,7 @@ function test_world() {
    
 }
 
-},{"./blockdata":2,"./worldgen":9,"numjs":44,"underscore":48}],9:[function(require,module,exports){
+},{"./blockdata":2,"./worldgen":9,"numjs":44,"underscore":49}],9:[function(require,module,exports){
 
 var v = require('./blockdata');
 var Material = v.Material;
@@ -2226,7 +2425,7 @@ function generateCWiseOp(proc, typesig) {
 }
 module.exports = generateCWiseOp
 
-},{"uniq":49}],13:[function(require,module,exports){
+},{"uniq":50}],13:[function(require,module,exports){
 "use strict"
 
 // The function below is called when constructing a cwise function object, and does the following:
@@ -30415,7 +30614,7 @@ function ndfft(dir, x, y) {
 }
 
 module.exports = ndfft
-},{"./lib/fft-matrix.js":21,"ndarray":25,"ndarray-ops":24,"typedarray-pool":47}],21:[function(require,module,exports){
+},{"./lib/fft-matrix.js":21,"ndarray":25,"ndarray-ops":24,"typedarray-pool":48}],21:[function(require,module,exports){
 var bits = require('bit-twiddle')
 
 function fft(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
@@ -31930,7 +32129,7 @@ Object.defineProperty(exports, 'moon', {
 module.exports = exports;
 
 }).call(this)}).call(this,"/node_modules/numjs/src/images")
-},{"./read":35,"path":82}],32:[function(require,module,exports){
+},{"./read":35,"path":83}],32:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -32096,7 +32295,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 
 // takes ~157ms on a 5000x5000 image
-var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_37_arg0_=4899*_inline_37_arg1_+9617*_inline_37_arg2_+1868*_inline_37_arg3_+8192>>14}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
+var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_31_arg0_=4899*_inline_31_arg1_+9617*_inline_31_arg2_+1868*_inline_31_arg3_+8192>>14}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
 
 /**
  * Compute Grayscale version of an RGB image.
@@ -32131,7 +32330,7 @@ module.exports = function rgb2gray (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_37_arg0_=0!==_inline_37_arg2_[0]&&0!==_inline_37_arg2_[1]?_inline_37_arg1_+_inline_37_arg4_+_inline_37_arg5_-_inline_37_arg3_:0===_inline_37_arg2_[0]&&0===_inline_37_arg2_[1]?_inline_37_arg1_:0===_inline_37_arg2_[0]?_inline_37_arg1_+_inline_37_arg5_:_inline_37_arg1_+_inline_37_arg4_}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Sum Area Table, also known as the integral of the image
@@ -32192,7 +32391,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=3*_inline_31_arg2_+10*_inline_31_arg3_+3*_inline_31_arg4_-3*_inline_31_arg7_-10*_inline_31_arg8_-3*_inline_31_arg9_,_inline_31_s=3*_inline_31_arg2_-3*_inline_31_arg4_+10*_inline_31_arg5_-10*_inline_31_arg6_+3*_inline_31_arg7_-3*_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_34_q=3*_inline_34_arg2_+10*_inline_34_arg3_+3*_inline_34_arg4_-3*_inline_34_arg7_-10*_inline_34_arg8_-3*_inline_34_arg9_,_inline_34_s=3*_inline_34_arg2_-3*_inline_34_arg4_+10*_inline_34_arg5_-10*_inline_34_arg6_+3*_inline_34_arg7_-3*_inline_34_arg9_;_inline_34_arg0_=Math.sqrt(_inline_34_s*_inline_34_s+_inline_34_q*_inline_34_q)}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_34_q","_inline_34_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Scharr transform.
@@ -32270,7 +32469,7 @@ module.exports = function computeSobel (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_34_arg0_=0!==_inline_34_arg2_[0]&&0!==_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_+_inline_34_arg5_-_inline_34_arg3_:0===_inline_34_arg2_[0]&&0===_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_:0===_inline_34_arg2_[0]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg5_:_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_*_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image
@@ -34318,7 +34517,7 @@ function formatNumber (v) {
   return String(Number((v || 0).toFixed(CONF.nFloatingValues)));
 }
 
-},{"./config":26,"./errors":28,"./utils":46,"cwise/lib/wrapper":14,"ndarray":25,"ndarray-fft":20,"ndarray-gemm":22,"ndarray-ops":24,"typedarray-pool":47}],46:[function(require,module,exports){
+},{"./config":26,"./errors":28,"./utils":46,"cwise/lib/wrapper":14,"ndarray":25,"ndarray-fft":20,"ndarray-gemm":22,"ndarray-ops":24,"typedarray-pool":48}],46:[function(require,module,exports){
 'use strict';
 var DTYPES = require('./dtypes');
 var _ = require('lodash');
@@ -34412,6 +34611,480 @@ module.exports = {
 };
 
 },{"./dtypes":27,"lodash":19}],47:[function(require,module,exports){
+"use strict";
+/*
+ * A fast javascript implementation of simplex noise by Jonas Wagner
+
+Based on a speed-improved simplex noise algorithm for 2D, 3D and 4D in Java.
+Which is based on example code by Stefan Gustavson (stegu@itn.liu.se).
+With Optimisations by Peter Eastman (peastman@drizzle.stanford.edu).
+Better rank ordering method by Stefan Gustavson in 2012.
+
+ Copyright (c) 2024 Jonas Wagner
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildPermutationTable = exports.createNoise4D = exports.createNoise3D = exports.createNoise2D = void 0;
+// these __PURE__ comments help uglifyjs with dead code removal
+//
+const SQRT3 = /*#__PURE__*/ Math.sqrt(3.0);
+const SQRT5 = /*#__PURE__*/ Math.sqrt(5.0);
+const F2 = 0.5 * (SQRT3 - 1.0);
+const G2 = (3.0 - SQRT3) / 6.0;
+const F3 = 1.0 / 3.0;
+const G3 = 1.0 / 6.0;
+const F4 = (SQRT5 - 1.0) / 4.0;
+const G4 = (5.0 - SQRT5) / 20.0;
+// I'm really not sure why this | 0 (basically a coercion to int)
+// is making this faster but I get ~5 million ops/sec more on the
+// benchmarks across the board or a ~10% speedup.
+const fastFloor = (x) => Math.floor(x) | 0;
+const grad2 = /*#__PURE__*/ new Float64Array([1, 1,
+    -1, 1,
+    1, -1,
+    -1, -1,
+    1, 0,
+    -1, 0,
+    1, 0,
+    -1, 0,
+    0, 1,
+    0, -1,
+    0, 1,
+    0, -1]);
+// double seems to be faster than single or int's
+// probably because most operations are in double precision
+const grad3 = /*#__PURE__*/ new Float64Array([1, 1, 0,
+    -1, 1, 0,
+    1, -1, 0,
+    -1, -1, 0,
+    1, 0, 1,
+    -1, 0, 1,
+    1, 0, -1,
+    -1, 0, -1,
+    0, 1, 1,
+    0, -1, 1,
+    0, 1, -1,
+    0, -1, -1]);
+// double is a bit quicker here as well
+const grad4 = /*#__PURE__*/ new Float64Array([0, 1, 1, 1, 0, 1, 1, -1, 0, 1, -1, 1, 0, 1, -1, -1,
+    0, -1, 1, 1, 0, -1, 1, -1, 0, -1, -1, 1, 0, -1, -1, -1,
+    1, 0, 1, 1, 1, 0, 1, -1, 1, 0, -1, 1, 1, 0, -1, -1,
+    -1, 0, 1, 1, -1, 0, 1, -1, -1, 0, -1, 1, -1, 0, -1, -1,
+    1, 1, 0, 1, 1, 1, 0, -1, 1, -1, 0, 1, 1, -1, 0, -1,
+    -1, 1, 0, 1, -1, 1, 0, -1, -1, -1, 0, 1, -1, -1, 0, -1,
+    1, 1, 1, 0, 1, 1, -1, 0, 1, -1, 1, 0, 1, -1, -1, 0,
+    -1, 1, 1, 0, -1, 1, -1, 0, -1, -1, 1, 0, -1, -1, -1, 0]);
+/**
+ * Creates a 2D noise function
+ * @param random the random function that will be used to build the permutation table
+ * @returns {NoiseFunction2D}
+ */
+function createNoise2D(random = Math.random) {
+    const perm = buildPermutationTable(random);
+    // precalculating this yields a little ~3% performance improvement.
+    const permGrad2x = new Float64Array(perm).map(v => grad2[(v % 12) * 2]);
+    const permGrad2y = new Float64Array(perm).map(v => grad2[(v % 12) * 2 + 1]);
+    return function noise2D(x, y) {
+        // if(!isFinite(x) || !isFinite(y)) return 0;
+        let n0 = 0; // Noise contributions from the three corners
+        let n1 = 0;
+        let n2 = 0;
+        // Skew the input space to determine which simplex cell we're in
+        const s = (x + y) * F2; // Hairy factor for 2D
+        const i = fastFloor(x + s);
+        const j = fastFloor(y + s);
+        const t = (i + j) * G2;
+        const X0 = i - t; // Unskew the cell origin back to (x,y) space
+        const Y0 = j - t;
+        const x0 = x - X0; // The x,y distances from the cell origin
+        const y0 = y - Y0;
+        // For the 2D case, the simplex shape is an equilateral triangle.
+        // Determine which simplex we are in.
+        let i1, j1; // Offsets for second (middle) corner of simplex in (i,j) coords
+        if (x0 > y0) {
+            i1 = 1;
+            j1 = 0;
+        } // lower triangle, XY order: (0,0)->(1,0)->(1,1)
+        else {
+            i1 = 0;
+            j1 = 1;
+        } // upper triangle, YX order: (0,0)->(0,1)->(1,1)
+        // A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
+        // a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
+        // c = (3-sqrt(3))/6
+        const x1 = x0 - i1 + G2; // Offsets for middle corner in (x,y) unskewed coords
+        const y1 = y0 - j1 + G2;
+        const x2 = x0 - 1.0 + 2.0 * G2; // Offsets for last corner in (x,y) unskewed coords
+        const y2 = y0 - 1.0 + 2.0 * G2;
+        // Work out the hashed gradient indices of the three simplex corners
+        const ii = i & 255;
+        const jj = j & 255;
+        // Calculate the contribution from the three corners
+        let t0 = 0.5 - x0 * x0 - y0 * y0;
+        if (t0 >= 0) {
+            const gi0 = ii + perm[jj];
+            const g0x = permGrad2x[gi0];
+            const g0y = permGrad2y[gi0];
+            t0 *= t0;
+            // n0 = t0 * t0 * (grad2[gi0] * x0 + grad2[gi0 + 1] * y0); // (x,y) of grad3 used for 2D gradient
+            n0 = t0 * t0 * (g0x * x0 + g0y * y0);
+        }
+        let t1 = 0.5 - x1 * x1 - y1 * y1;
+        if (t1 >= 0) {
+            const gi1 = ii + i1 + perm[jj + j1];
+            const g1x = permGrad2x[gi1];
+            const g1y = permGrad2y[gi1];
+            t1 *= t1;
+            // n1 = t1 * t1 * (grad2[gi1] * x1 + grad2[gi1 + 1] * y1);
+            n1 = t1 * t1 * (g1x * x1 + g1y * y1);
+        }
+        let t2 = 0.5 - x2 * x2 - y2 * y2;
+        if (t2 >= 0) {
+            const gi2 = ii + 1 + perm[jj + 1];
+            const g2x = permGrad2x[gi2];
+            const g2y = permGrad2y[gi2];
+            t2 *= t2;
+            // n2 = t2 * t2 * (grad2[gi2] * x2 + grad2[gi2 + 1] * y2);
+            n2 = t2 * t2 * (g2x * x2 + g2y * y2);
+        }
+        // Add contributions from each corner to get the final noise value.
+        // The result is scaled to return values in the interval [-1,1].
+        return 70.0 * (n0 + n1 + n2);
+    };
+}
+exports.createNoise2D = createNoise2D;
+/**
+ * Creates a 3D noise function
+ * @param random the random function that will be used to build the permutation table
+ * @returns {NoiseFunction3D}
+ */
+function createNoise3D(random = Math.random) {
+    const perm = buildPermutationTable(random);
+    // precalculating these seems to yield a speedup of over 15%
+    const permGrad3x = new Float64Array(perm).map(v => grad3[(v % 12) * 3]);
+    const permGrad3y = new Float64Array(perm).map(v => grad3[(v % 12) * 3 + 1]);
+    const permGrad3z = new Float64Array(perm).map(v => grad3[(v % 12) * 3 + 2]);
+    return function noise3D(x, y, z) {
+        let n0, n1, n2, n3; // Noise contributions from the four corners
+        // Skew the input space to determine which simplex cell we're in
+        const s = (x + y + z) * F3; // Very nice and simple skew factor for 3D
+        const i = fastFloor(x + s);
+        const j = fastFloor(y + s);
+        const k = fastFloor(z + s);
+        const t = (i + j + k) * G3;
+        const X0 = i - t; // Unskew the cell origin back to (x,y,z) space
+        const Y0 = j - t;
+        const Z0 = k - t;
+        const x0 = x - X0; // The x,y,z distances from the cell origin
+        const y0 = y - Y0;
+        const z0 = z - Z0;
+        // For the 3D case, the simplex shape is a slightly irregular tetrahedron.
+        // Determine which simplex we are in.
+        let i1, j1, k1; // Offsets for second corner of simplex in (i,j,k) coords
+        let i2, j2, k2; // Offsets for third corner of simplex in (i,j,k) coords
+        if (x0 >= y0) {
+            if (y0 >= z0) {
+                i1 = 1;
+                j1 = 0;
+                k1 = 0;
+                i2 = 1;
+                j2 = 1;
+                k2 = 0;
+            } // X Y Z order
+            else if (x0 >= z0) {
+                i1 = 1;
+                j1 = 0;
+                k1 = 0;
+                i2 = 1;
+                j2 = 0;
+                k2 = 1;
+            } // X Z Y order
+            else {
+                i1 = 0;
+                j1 = 0;
+                k1 = 1;
+                i2 = 1;
+                j2 = 0;
+                k2 = 1;
+            } // Z X Y order
+        }
+        else { // x0<y0
+            if (y0 < z0) {
+                i1 = 0;
+                j1 = 0;
+                k1 = 1;
+                i2 = 0;
+                j2 = 1;
+                k2 = 1;
+            } // Z Y X order
+            else if (x0 < z0) {
+                i1 = 0;
+                j1 = 1;
+                k1 = 0;
+                i2 = 0;
+                j2 = 1;
+                k2 = 1;
+            } // Y Z X order
+            else {
+                i1 = 0;
+                j1 = 1;
+                k1 = 0;
+                i2 = 1;
+                j2 = 1;
+                k2 = 0;
+            } // Y X Z order
+        }
+        // A step of (1,0,0) in (i,j,k) means a step of (1-c,-c,-c) in (x,y,z),
+        // a step of (0,1,0) in (i,j,k) means a step of (-c,1-c,-c) in (x,y,z), and
+        // a step of (0,0,1) in (i,j,k) means a step of (-c,-c,1-c) in (x,y,z), where
+        // c = 1/6.
+        const x1 = x0 - i1 + G3; // Offsets for second corner in (x,y,z) coords
+        const y1 = y0 - j1 + G3;
+        const z1 = z0 - k1 + G3;
+        const x2 = x0 - i2 + 2.0 * G3; // Offsets for third corner in (x,y,z) coords
+        const y2 = y0 - j2 + 2.0 * G3;
+        const z2 = z0 - k2 + 2.0 * G3;
+        const x3 = x0 - 1.0 + 3.0 * G3; // Offsets for last corner in (x,y,z) coords
+        const y3 = y0 - 1.0 + 3.0 * G3;
+        const z3 = z0 - 1.0 + 3.0 * G3;
+        // Work out the hashed gradient indices of the four simplex corners
+        const ii = i & 255;
+        const jj = j & 255;
+        const kk = k & 255;
+        // Calculate the contribution from the four corners
+        let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0;
+        if (t0 < 0)
+            n0 = 0.0;
+        else {
+            const gi0 = ii + perm[jj + perm[kk]];
+            t0 *= t0;
+            n0 = t0 * t0 * (permGrad3x[gi0] * x0 + permGrad3y[gi0] * y0 + permGrad3z[gi0] * z0);
+        }
+        let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1;
+        if (t1 < 0)
+            n1 = 0.0;
+        else {
+            const gi1 = ii + i1 + perm[jj + j1 + perm[kk + k1]];
+            t1 *= t1;
+            n1 = t1 * t1 * (permGrad3x[gi1] * x1 + permGrad3y[gi1] * y1 + permGrad3z[gi1] * z1);
+        }
+        let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2;
+        if (t2 < 0)
+            n2 = 0.0;
+        else {
+            const gi2 = ii + i2 + perm[jj + j2 + perm[kk + k2]];
+            t2 *= t2;
+            n2 = t2 * t2 * (permGrad3x[gi2] * x2 + permGrad3y[gi2] * y2 + permGrad3z[gi2] * z2);
+        }
+        let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3;
+        if (t3 < 0)
+            n3 = 0.0;
+        else {
+            const gi3 = ii + 1 + perm[jj + 1 + perm[kk + 1]];
+            t3 *= t3;
+            n3 = t3 * t3 * (permGrad3x[gi3] * x3 + permGrad3y[gi3] * y3 + permGrad3z[gi3] * z3);
+        }
+        // Add contributions from each corner to get the final noise value.
+        // The result is scaled to stay just inside [-1,1]
+        return 32.0 * (n0 + n1 + n2 + n3);
+    };
+}
+exports.createNoise3D = createNoise3D;
+/**
+ * Creates a 4D noise function
+ * @param random the random function that will be used to build the permutation table
+ * @returns {NoiseFunction4D}
+ */
+function createNoise4D(random = Math.random) {
+    const perm = buildPermutationTable(random);
+    // precalculating these leads to a ~10% speedup
+    const permGrad4x = new Float64Array(perm).map(v => grad4[(v % 32) * 4]);
+    const permGrad4y = new Float64Array(perm).map(v => grad4[(v % 32) * 4 + 1]);
+    const permGrad4z = new Float64Array(perm).map(v => grad4[(v % 32) * 4 + 2]);
+    const permGrad4w = new Float64Array(perm).map(v => grad4[(v % 32) * 4 + 3]);
+    return function noise4D(x, y, z, w) {
+        let n0, n1, n2, n3, n4; // Noise contributions from the five corners
+        // Skew the (x,y,z,w) space to determine which cell of 24 simplices we're in
+        const s = (x + y + z + w) * F4; // Factor for 4D skewing
+        const i = fastFloor(x + s);
+        const j = fastFloor(y + s);
+        const k = fastFloor(z + s);
+        const l = fastFloor(w + s);
+        const t = (i + j + k + l) * G4; // Factor for 4D unskewing
+        const X0 = i - t; // Unskew the cell origin back to (x,y,z,w) space
+        const Y0 = j - t;
+        const Z0 = k - t;
+        const W0 = l - t;
+        const x0 = x - X0; // The x,y,z,w distances from the cell origin
+        const y0 = y - Y0;
+        const z0 = z - Z0;
+        const w0 = w - W0;
+        // For the 4D case, the simplex is a 4D shape I won't even try to describe.
+        // To find out which of the 24 possible simplices we're in, we need to
+        // determine the magnitude ordering of x0, y0, z0 and w0.
+        // Six pair-wise comparisons are performed between each possible pair
+        // of the four coordinates, and the results are used to rank the numbers.
+        let rankx = 0;
+        let ranky = 0;
+        let rankz = 0;
+        let rankw = 0;
+        if (x0 > y0)
+            rankx++;
+        else
+            ranky++;
+        if (x0 > z0)
+            rankx++;
+        else
+            rankz++;
+        if (x0 > w0)
+            rankx++;
+        else
+            rankw++;
+        if (y0 > z0)
+            ranky++;
+        else
+            rankz++;
+        if (y0 > w0)
+            ranky++;
+        else
+            rankw++;
+        if (z0 > w0)
+            rankz++;
+        else
+            rankw++;
+        // simplex[c] is a 4-vector with the numbers 0, 1, 2 and 3 in some order.
+        // Many values of c will never occur, since e.g. x>y>z>w makes x<z, y<w and x<w
+        // impossible. Only the 24 indices which have non-zero entries make any sense.
+        // We use a thresholding to set the coordinates in turn from the largest magnitude.
+        // Rank 3 denotes the largest coordinate.
+        // Rank 2 denotes the second largest coordinate.
+        // Rank 1 denotes the second smallest coordinate.
+        // The integer offsets for the second simplex corner
+        const i1 = rankx >= 3 ? 1 : 0;
+        const j1 = ranky >= 3 ? 1 : 0;
+        const k1 = rankz >= 3 ? 1 : 0;
+        const l1 = rankw >= 3 ? 1 : 0;
+        // The integer offsets for the third simplex corner
+        const i2 = rankx >= 2 ? 1 : 0;
+        const j2 = ranky >= 2 ? 1 : 0;
+        const k2 = rankz >= 2 ? 1 : 0;
+        const l2 = rankw >= 2 ? 1 : 0;
+        // The integer offsets for the fourth simplex corner
+        const i3 = rankx >= 1 ? 1 : 0;
+        const j3 = ranky >= 1 ? 1 : 0;
+        const k3 = rankz >= 1 ? 1 : 0;
+        const l3 = rankw >= 1 ? 1 : 0;
+        // The fifth corner has all coordinate offsets = 1, so no need to compute that.
+        const x1 = x0 - i1 + G4; // Offsets for second corner in (x,y,z,w) coords
+        const y1 = y0 - j1 + G4;
+        const z1 = z0 - k1 + G4;
+        const w1 = w0 - l1 + G4;
+        const x2 = x0 - i2 + 2.0 * G4; // Offsets for third corner in (x,y,z,w) coords
+        const y2 = y0 - j2 + 2.0 * G4;
+        const z2 = z0 - k2 + 2.0 * G4;
+        const w2 = w0 - l2 + 2.0 * G4;
+        const x3 = x0 - i3 + 3.0 * G4; // Offsets for fourth corner in (x,y,z,w) coords
+        const y3 = y0 - j3 + 3.0 * G4;
+        const z3 = z0 - k3 + 3.0 * G4;
+        const w3 = w0 - l3 + 3.0 * G4;
+        const x4 = x0 - 1.0 + 4.0 * G4; // Offsets for last corner in (x,y,z,w) coords
+        const y4 = y0 - 1.0 + 4.0 * G4;
+        const z4 = z0 - 1.0 + 4.0 * G4;
+        const w4 = w0 - 1.0 + 4.0 * G4;
+        // Work out the hashed gradient indices of the five simplex corners
+        const ii = i & 255;
+        const jj = j & 255;
+        const kk = k & 255;
+        const ll = l & 255;
+        // Calculate the contribution from the five corners
+        let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0 - w0 * w0;
+        if (t0 < 0)
+            n0 = 0.0;
+        else {
+            const gi0 = ii + perm[jj + perm[kk + perm[ll]]];
+            t0 *= t0;
+            n0 = t0 * t0 * (permGrad4x[gi0] * x0 + permGrad4y[gi0] * y0 + permGrad4z[gi0] * z0 + permGrad4w[gi0] * w0);
+        }
+        let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1 - w1 * w1;
+        if (t1 < 0)
+            n1 = 0.0;
+        else {
+            const gi1 = ii + i1 + perm[jj + j1 + perm[kk + k1 + perm[ll + l1]]];
+            t1 *= t1;
+            n1 = t1 * t1 * (permGrad4x[gi1] * x1 + permGrad4y[gi1] * y1 + permGrad4z[gi1] * z1 + permGrad4w[gi1] * w1);
+        }
+        let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2 - w2 * w2;
+        if (t2 < 0)
+            n2 = 0.0;
+        else {
+            const gi2 = ii + i2 + perm[jj + j2 + perm[kk + k2 + perm[ll + l2]]];
+            t2 *= t2;
+            n2 = t2 * t2 * (permGrad4x[gi2] * x2 + permGrad4y[gi2] * y2 + permGrad4z[gi2] * z2 + permGrad4w[gi2] * w2);
+        }
+        let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3 - w3 * w3;
+        if (t3 < 0)
+            n3 = 0.0;
+        else {
+            const gi3 = ii + i3 + perm[jj + j3 + perm[kk + k3 + perm[ll + l3]]];
+            t3 *= t3;
+            n3 = t3 * t3 * (permGrad4x[gi3] * x3 + permGrad4y[gi3] * y3 + permGrad4z[gi3] * z3 + permGrad4w[gi3] * w3);
+        }
+        let t4 = 0.6 - x4 * x4 - y4 * y4 - z4 * z4 - w4 * w4;
+        if (t4 < 0)
+            n4 = 0.0;
+        else {
+            const gi4 = ii + 1 + perm[jj + 1 + perm[kk + 1 + perm[ll + 1]]];
+            t4 *= t4;
+            n4 = t4 * t4 * (permGrad4x[gi4] * x4 + permGrad4y[gi4] * y4 + permGrad4z[gi4] * z4 + permGrad4w[gi4] * w4);
+        }
+        // Sum up and scale the result to cover the range [-1,1]
+        return 27.0 * (n0 + n1 + n2 + n3 + n4);
+    };
+}
+exports.createNoise4D = createNoise4D;
+/**
+ * Builds a random permutation table.
+ * This is exported only for (internal) testing purposes.
+ * Do not rely on this export.
+ * @private
+ */
+function buildPermutationTable(random) {
+    const tableSize = 512;
+    const p = new Uint8Array(tableSize);
+    for (let i = 0; i < tableSize / 2; i++) {
+        p[i] = i;
+    }
+    for (let i = 0; i < tableSize / 2 - 1; i++) {
+        const r = i + ~~(random() * (256 - i));
+        const aux = p[i];
+        p[i] = p[r];
+        p[r] = aux;
+    }
+    for (let i = 256; i < tableSize; i++) {
+        p[i] = p[i - 256];
+    }
+    return p;
+}
+exports.buildPermutationTable = buildPermutationTable;
+
+},{}],48:[function(require,module,exports){
 (function (global){(function (){
 'use strict'
 
@@ -34666,7 +35339,7 @@ exports.clearCache = function clearCache() {
 }
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"bit-twiddle":10,"buffer":55,"dup":15}],48:[function(require,module,exports){
+},{"bit-twiddle":10,"buffer":56,"dup":15}],49:[function(require,module,exports){
 (function (global){(function (){
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
@@ -36717,7 +37390,7 @@ exports.clearCache = function clearCache() {
 
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -36776,7 +37449,7 @@ function unique(list, compare, sorted) {
 
 module.exports = unique
 
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 (function (global){(function (){
 'use strict';
 
@@ -37286,7 +37959,7 @@ var objectKeys = Object.keys || function (obj) {
 };
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"object.assign/polyfill":81,"util/":53}],51:[function(require,module,exports){
+},{"object.assign/polyfill":82,"util/":54}],52:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -37311,14 +37984,14 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 (function (process,global){(function (){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -37908,7 +38581,7 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":52,"_process":83,"inherits":51}],54:[function(require,module,exports){
+},{"./support/isBuffer":53,"_process":84,"inherits":52}],55:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -38060,7 +38733,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],55:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -39841,7 +40514,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":54,"buffer":55,"ieee754":76}],56:[function(require,module,exports){
+},{"base64-js":55,"buffer":56,"ieee754":77}],57:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -39858,7 +40531,7 @@ module.exports = function callBoundIntrinsic(name, allowMissing) {
 	return intrinsic;
 };
 
-},{"./":57,"get-intrinsic":69}],57:[function(require,module,exports){
+},{"./":58,"get-intrinsic":70}],58:[function(require,module,exports){
 'use strict';
 
 var bind = require('function-bind');
@@ -39895,7 +40568,7 @@ if ($defineProperty) {
 	module.exports.apply = applyBind;
 }
 
-},{"es-define-property":59,"es-errors/type":65,"function-bind":68,"get-intrinsic":69,"set-function-length":84}],58:[function(require,module,exports){
+},{"es-define-property":60,"es-errors/type":66,"function-bind":69,"get-intrinsic":70,"set-function-length":85}],59:[function(require,module,exports){
 'use strict';
 
 var $defineProperty = require('es-define-property');
@@ -39953,7 +40626,7 @@ module.exports = function defineDataProperty(
 	}
 };
 
-},{"es-define-property":59,"es-errors/syntax":64,"es-errors/type":65,"gopd":70}],59:[function(require,module,exports){
+},{"es-define-property":60,"es-errors/syntax":65,"es-errors/type":66,"gopd":71}],60:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -39971,49 +40644,49 @@ if ($defineProperty) {
 
 module.exports = $defineProperty;
 
-},{"get-intrinsic":69}],60:[function(require,module,exports){
+},{"get-intrinsic":70}],61:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./eval')} */
 module.exports = EvalError;
 
-},{}],61:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 'use strict';
 
 /** @type {import('.')} */
 module.exports = Error;
 
-},{}],62:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./range')} */
 module.exports = RangeError;
 
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./ref')} */
 module.exports = ReferenceError;
 
-},{}],64:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./syntax')} */
 module.exports = SyntaxError;
 
-},{}],65:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./type')} */
 module.exports = TypeError;
 
-},{}],66:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./uri')} */
 module.exports = URIError;
 
-},{}],67:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 'use strict';
 
 /* eslint no-invalid-this: 1 */
@@ -40099,14 +40772,14 @@ module.exports = function bind(that) {
     return bound;
 };
 
-},{}],68:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 'use strict';
 
 var implementation = require('./implementation');
 
 module.exports = Function.prototype.bind || implementation;
 
-},{"./implementation":67}],69:[function(require,module,exports){
+},{"./implementation":68}],70:[function(require,module,exports){
 'use strict';
 
 var undefined;
@@ -40467,7 +41140,7 @@ module.exports = function GetIntrinsic(name, allowMissing) {
 	return value;
 };
 
-},{"es-errors":61,"es-errors/eval":60,"es-errors/range":62,"es-errors/ref":63,"es-errors/syntax":64,"es-errors/type":65,"es-errors/uri":66,"function-bind":68,"has-proto":72,"has-symbols":73,"hasown":75}],70:[function(require,module,exports){
+},{"es-errors":62,"es-errors/eval":61,"es-errors/range":63,"es-errors/ref":64,"es-errors/syntax":65,"es-errors/type":66,"es-errors/uri":67,"function-bind":69,"has-proto":73,"has-symbols":74,"hasown":76}],71:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -40485,7 +41158,7 @@ if ($gOPD) {
 
 module.exports = $gOPD;
 
-},{"get-intrinsic":69}],71:[function(require,module,exports){
+},{"get-intrinsic":70}],72:[function(require,module,exports){
 'use strict';
 
 var $defineProperty = require('es-define-property');
@@ -40509,7 +41182,7 @@ hasPropertyDescriptors.hasArrayLengthDefineBug = function hasArrayLengthDefineBu
 
 module.exports = hasPropertyDescriptors;
 
-},{"es-define-property":59}],72:[function(require,module,exports){
+},{"es-define-property":60}],73:[function(require,module,exports){
 'use strict';
 
 var test = {
@@ -40526,7 +41199,7 @@ module.exports = function hasProto() {
 		&& !(test instanceof $Object);
 };
 
-},{}],73:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 'use strict';
 
 var origSymbol = typeof Symbol !== 'undefined' && Symbol;
@@ -40541,7 +41214,7 @@ module.exports = function hasNativeSymbols() {
 	return hasSymbolSham();
 };
 
-},{"./shams":74}],74:[function(require,module,exports){
+},{"./shams":75}],75:[function(require,module,exports){
 'use strict';
 
 /* eslint complexity: [2, 18], max-statements: [2, 33] */
@@ -40585,7 +41258,7 @@ module.exports = function hasSymbols() {
 	return true;
 };
 
-},{}],75:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 'use strict';
 
 var call = Function.prototype.call;
@@ -40595,7 +41268,7 @@ var bind = require('function-bind');
 /** @type {import('.')} */
 module.exports = bind.call(call, $hasOwn);
 
-},{"function-bind":68}],76:[function(require,module,exports){
+},{"function-bind":69}],77:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -40682,7 +41355,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],77:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 'use strict';
 
 var keysShim;
@@ -40806,7 +41479,7 @@ if (!Object.keys) {
 }
 module.exports = keysShim;
 
-},{"./isArguments":79}],78:[function(require,module,exports){
+},{"./isArguments":80}],79:[function(require,module,exports){
 'use strict';
 
 var slice = Array.prototype.slice;
@@ -40840,7 +41513,7 @@ keysShim.shim = function shimObjectKeys() {
 
 module.exports = keysShim;
 
-},{"./implementation":77,"./isArguments":79}],79:[function(require,module,exports){
+},{"./implementation":78,"./isArguments":80}],80:[function(require,module,exports){
 'use strict';
 
 var toStr = Object.prototype.toString;
@@ -40859,7 +41532,7 @@ module.exports = function isArguments(value) {
 	return isArgs;
 };
 
-},{}],80:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 'use strict';
 
 // modified from https://github.com/es-shims/es6-shim
@@ -40907,7 +41580,7 @@ module.exports = function assign(target, source1) {
 	return to; // step 4
 };
 
-},{"call-bind/callBound":56,"has-symbols/shams":74,"object-keys":78}],81:[function(require,module,exports){
+},{"call-bind/callBound":57,"has-symbols/shams":75,"object-keys":79}],82:[function(require,module,exports){
 'use strict';
 
 var implementation = require('./implementation');
@@ -40964,7 +41637,7 @@ module.exports = function getPolyfill() {
 	return Object.assign;
 };
 
-},{"./implementation":80}],82:[function(require,module,exports){
+},{"./implementation":81}],83:[function(require,module,exports){
 (function (process){(function (){
 // 'path' module extracted from Node.js v8.11.1 (only the posix part)
 // transplited with Babel
@@ -41497,7 +42170,7 @@ posix.posix = posix;
 module.exports = posix;
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":83}],83:[function(require,module,exports){
+},{"_process":84}],84:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -41683,7 +42356,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],84:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -41727,4 +42400,4 @@ module.exports = function setFunctionLength(fn, length) {
 	return fn;
 };
 
-},{"define-data-property":58,"es-errors/type":65,"get-intrinsic":69,"gopd":70,"has-property-descriptors":71}]},{},[4]);
+},{"define-data-property":59,"es-errors/type":66,"get-intrinsic":70,"gopd":71,"has-property-descriptors":72}]},{},[4]);

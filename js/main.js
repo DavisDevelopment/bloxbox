@@ -19,10 +19,7 @@ let world = new World({
  *
  * @returns {number[][]} - A 2D array of altitude values for each block in the region
  */
-function noisyAltitude(noiseScale=0.1, heightFactor=25) {
-   // Assuming you have a Perlin noise function imported as `perlinNoise`
-   // or from a library like `simplex-noise`
-   // import SimplexNoise from 'simplex-noise';
+function noisyAltitude(noiseScale=0.1, heightFactor=25, smoothingFactor=0) {
    var sn = require('simplex-noise');
 
    // Initialize noise generator
@@ -52,13 +49,47 @@ function noisyAltitude(noiseScale=0.1, heightFactor=25) {
       }
    }
 
+   // Apply smoothing to the terrain
+   if (smoothingFactor > 0) {
+      // This algorithm takes each block in the terrain and replaces its height with the average of its height and the heights of its four neighbors (N, S, E, W)
+      // This is done in a way that is more efficient than using nested for-loops with (x, y) coordinates
+      // Instead, we use a single loop and calculate the new height for each block as the average of the heights of the blocks in its neighborhood
+      for (let x = 0; x < regionWidth; x++) {
+         for (let y = 0; y < regionHeight; y++) {
+            // Calculate the average height of the block and its neighbors
+            // Start with the height of the block itself
+            let heightSum = terrain[x][y];
+            
+            // Add the heights of the neighbors to the sum
+            // We only add the heights of neighbors that exist (i.e. those that are not out of bounds)
+            if (x > 0) {
+               heightSum += terrain[x-1][y];
+            }
+            if (x < regionWidth-1) {
+               heightSum += terrain[x+1][y];
+            }
+            if (y > 0) {
+               heightSum += terrain[x][y-1];
+            }
+            if (y < regionHeight-1) {
+               heightSum += terrain[x][y+1];
+            }
+            
+            // Calculate the average height by dividing the sum by the number of neighbors (plus one for the block itself)
+            // Use Math.floor to round down to the nearest integer
+            terrain[x][y] = Math.floor(heightSum / (1 + (x > 0 ? 1 : 0) + (x < regionWidth-1 ? 1 : 0) + (y > 0 ? 1 : 0) + (y < regionHeight-1 ? 1 : 0)));
+         }
+      }
+   }
+
    // You can now use `terrain[x][y]` to set the height of voxels in your world.
    console.log(terrain);
 
    return terrain;
 }
 
-var hillZ = noisyAltitude();
+var hillZ = noisyAltitude(0.32, 25, 1);
+
 for (let x = 0; x < world.data.width; x++) {
    for (let y = 0; y < world.data.height; y++) {
       let z = hillZ[x][y];
@@ -69,6 +100,8 @@ for (let x = 0; x < world.data.width; x++) {
 let renderer = new TopDownRenderer(world);
 
 window['renderer'] = renderer;
+
+function reNoiseAltitude(noiseScale, heightFactor, smoothingFactor) {}
 
 // const numSamples = 50;
 
