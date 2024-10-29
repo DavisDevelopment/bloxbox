@@ -2,3 +2,6 @@
 references
 node_modules
 package-lock.json
+
+js/geometry.js
+js/blockdata.js
