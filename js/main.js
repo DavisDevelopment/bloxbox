@@ -7,10 +7,17 @@ var Material = w.Material;
 var TopDownRenderer = require('./render2d').TopDownRenderer;
 
 let world = new World({
-   size: [200, 200, 75]
+   size: [500, 500, 64*2]
 });
-
-console.log(world);
+world.data.forEachBlock({}, (x, y, z) => {
+   if (z === 5) {
+      world.data.setBlockType(x, y, z, Material.GRASS);
+   } 
+   else {
+      world.data.setBlockType(x, y, z, Material.AIR);
+   }
+});
+console.log(world.data.getBlockType(33, 33, 5));
 
 let renderer = new TopDownRenderer(world);
 

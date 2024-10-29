@@ -1,5 +1,5 @@
 
-var v = require('./voxeldata');
+var v = require('./blockdata');
 var Material = v.Material;
 // var World = require('./world').World;
 
@@ -7,28 +7,28 @@ var Material = v.Material;
  * Grows a tree at a given position in the world. The tree is grown
  * upwards, centered on the specified position, and consists of a
  * trunk and a canopy of leaves.
- * @param {World} world world to grow the tree in
+ * @param {WorldData} world world to grow the tree in
  * @param {number} x x position of the tree
  * @param {number} y y position of the tree
  * @param {number} z z position of the tree
  */
 function grow_tree(world, x, y, z) {
    try {
-      const vd = world.voxelMaterialData;
+      const vd = world.data;
 
       // Check if the block at the specified position is a sapling
-      if (vd.getBlock(x, y, z) === Material.SAPLING) {
+      if (vd.getBlockType(x, y, z) === Material.SAPLING) {
          // Grow a tree
          const treeHeight = 5;
          for (let i = 0; i < treeHeight; i++) {
             // Set each block in the tree to wood
-            vd.setBlock(x, y, z-i, Material.WOOD);
+            vd.setBlock(x, y, z+1, Material.WOOD);
          }
 
-         /*
          // Set the top block of the tree to leaves
-         vd.setBlock(x, y, z + treeHeight, Material.LEAVES);
-
+         vd.setBlock(x, y, 1+z+treeHeight, Material.LEAVES);
+         
+         /*
          // Grow a square of leaves around the WOOD block right below the top of the tree
          for (let i = -1; i <= 1; i++) {
             for (let j = -1; j <= 1; j++) {

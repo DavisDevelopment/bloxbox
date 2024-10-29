@@ -28,7 +28,7 @@ class TopDownRenderer {
       this.context = this.canvasElem.getContext('2d');
 
       if (!world) {
-         world = new world();
+         world = new World();
       }
 
       this.world = world;
@@ -131,7 +131,7 @@ class TopDownRenderer {
 
    onCanvasRightClicked(x, y) {
       const me = this;
-      const vmd = me.world.voxelMaterialData;
+      const vmd = me.world.data;
       const blockType = 1; // Example block type
       let blockSize = 2.0 * this.viewRect.zoomFactor;
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
@@ -142,7 +142,7 @@ class TopDownRenderer {
          const z = this.topBlocks.get(worldX, worldY);
   
          var guy = new Person();
-         guy.setPos(worldX, worldY, z + 1);
+         guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
       }
       catch (error) {
@@ -153,7 +153,7 @@ class TopDownRenderer {
 
    onCanvasClicked(x, y) {
       const me = this;
-      const vmd = me.world.voxelMaterialData;
+      const vmd = me.world.data;
       const blockType = 1; // Example block type
       let blockSize = 2.0 * this.viewRect.zoomFactor;
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
@@ -163,7 +163,7 @@ class TopDownRenderer {
          // Select the block at the clicked position
          const z = this.topBlocks.get(worldX, worldY);
 
-         const selectedBlock = this.world.getBlock(worldX, worldY, z);
+         const selectedBlock = vmd.getBlockType(worldX, worldY, z);
          if (selectedBlock !== 0) { // Assuming 0 represents an empty block
             vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
             
@@ -193,8 +193,8 @@ class TopDownRenderer {
    }
 
    sample_voxels_topdown() {
-      let world_shape = this.world.voxelMaterialData.shape;
-      let vmd = this.world.voxelMaterialData;
+      let world_shape = this.world.data.shape;
+      let vmd = this.world.data;
       let width = vmd.width, height = vmd.height, depth = vmd.depth;
 
       let c = this.context;
@@ -218,7 +218,10 @@ class TopDownRenderer {
                z = 0;
             }
 
-            let material = vmd.getBlock(x, y, z);
+            let material = vmd.getBlockType(x, y, z);
+            if (material == null) {
+               continue;
+            }
 
             let cell_color = Material.getColorOf(material);
 

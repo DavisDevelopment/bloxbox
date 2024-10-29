@@ -1,12 +1,17 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 
 const _ = require('underscore');
-const v = require('./voxeldata');
+const v = require('./blockdata');
 const Material = v.Material;
+const pf = require('./pathfinding.js');
+const pteq = pf.pteq;
 
 class Task {
    constructor() {
-
+      // this.running = false;
+      // this.complete = false;
+      // this.suspended = false;
+      this.next_task = null;
    }
 
    tick(person) {
@@ -16,143 +21,542 @@ class Task {
 }
 
 class WalkPath extends Task {
-   constructor(mvmt) {
+   constructor(mvmt_path) {
       super();
 
-      this.goalpos = {x:x, y:y, z:z};
+      this.path = mvmt_path;
+      this.current_node = 0;
+   }
+
+   tick(person, n) {
+      if (this.path.length == 0 || pteq(person.pos, this.path[this.path.length - 1])) {
+         this.current_node = 0;
+         return this.next_task;
+      }
+
+      var target = this.path[this.current_node++];
+
+      person.setPos(target.x, target.y, target.z);
+
+      return this;
    }
 }
 
-
-function find_path(person, start_pos, end_pos) {
-   var path = [];
-
-   var start = {x: start_pos.x, y: start_pos.y};
-   var end = {x: end_pos.x, y: end_pos.y};
-
-   var current = start;
-   while (!_.isEqual(current, end)) {
-      path.push(current);
-
-      if (current.x > end.x) {
-         current.x--;
-      } else if (current.x < end.x) {
-         current.x++;
-      } else if (current.y > end.y) {
-         current.y--;
-      } else if (current.y < end.y) {
-         current.y++;
-      }
+class LaunchTask extends Task {
+   constructor(launch) {
+      super();
+      this.f = launch;
    }
 
-   path.push(end);
-
-   return path;
-}
-
-function a_star(person, start_pos, end_pos) {
-   const world = person.world;
-   const blocks = world.voxelMaterialData;
-
-   function getNeighbors(node) {
-      var neighbors = [];
-      var directions = [
-         { x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 },
-         { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 },
-         { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 }
-      ];
-      directions.forEach(function (dir) {
-         var neighbor = { x: node.x + dir.x, y: node.y + dir.y, z: node.z + dir.z };
-         if (blocks.isValidCoord(neighbor)) {
-            neighbors.push(neighbor);
-         }
-      });
-      console.log(neighbors);
-      return neighbors;
+   tick(person, n) {
+      return this.f(person, n);
    }
-
-   var start = start_pos;
-   var end = end_pos;
-
-   var open_set = [start];
-   var came_from = {};
-
-   var g_score = {};
-   g_score[start] = 0;
-
-   var f_score = {};
-   f_score[start] = heuristic(start, end);
-
-    while (open_set.length > 0) {
-      console.log(open_set);
-
-      var current = open_set[0];
-      for (var i = 1; i < open_set.length; i++) {
-         if (f_score[open_set[i]] < f_score[current]) {
-            current = open_set[i];
-         }
-      }
-
-      if (current.x == end.x && current.y == end.y && current.z == end.z) {
-         var path = [current];
-         while (current in came_from) {
-            current = came_from[current];
-            path.unshift(current);
-         }
-         return path;
-      }
-
-      for (var i = 0; i < open_set.length; i++) {
-         if (open_set[i].x == current.x && open_set[i].y == current.y && open_set[i].z == current.z) {
-            open_set.splice(i,1);
-            break;
-         }
-      }
-
-      // Get a list of the current node's neighbors
-      var neighbors = getNeighbors(current);
-      // For each neighbor, if we haven't visited it yet, or if our current path
-      // to the neighbor is shorter than a previously discovered path, then
-      // update the neighbor's came_from and g_score values
-      for (var i = 0; i < neighbors.length; i++) {
-         var neighbor = neighbors[i];
-
-         var tentative_g_score = g_score[current] + 1;
-
-         if (neighbor in g_score && g_score[neighbor] <= tentative_g_score) {
-            // This neighbor has already been visited and our new path to it
-            // is not shorter than the previously discovered path, so skip it
-            continue;
-         }
-
-         // Set the neighbor's came_from value to the current node
-         came_from[neighbor] = current;
-         // Set the neighbor's g_score value to the tentative g_score
-         g_score[neighbor] = tentative_g_score;
-         // Set the neighbor's f_score value to the g_score plus the heuristic
-         // cost of moving from the neighbor to the end node
-         f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, end);
-
-         // If the neighbor is not already in the open set, add it
-         if (!_.contains(open_set, neighbor)) {
-            open_set.push(neighbor);
-         }
-      }
-   }
-
-   return [];
 }
 
-function heuristic(a, b) {
-   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+module.exports.Task=Task;
+module.exports.WalkPath=WalkPath;
+module.exports.LaunchTask=LaunchTask;
+},{"./blockdata":2,"./pathfinding.js":5,"underscore":48}],2:[function(require,module,exports){
+(function (Buffer){(function (){
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    };
+    return function (d, b) {
+        if (typeof b !== "function" && b !== null)
+            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+var assert = require('assert');
+var geom = require('./geometry');
+var _ = require('underscore');
+var CHUNK_WIDTH = 16;
+var CHUNK_HEIGHT = 16;
+var CHUNK_DEPTH = 64;
+var SECTION_HEIGHT = 16;
+// Get reference to the most efficient available array-container for unsigned integers
+var UInt32 = (function () {
+    // WAY premature check for the java ecosystem being available
+    // if (typeof java !== 'undefined') {
+    //    //check whether we're running in GraalVM and have access to Java types
+    //    var getJavaArrayClass = java?.lang?.Integer?.TYPE?.arrayClass;
+    //    try {
+    //       var JavaIntegerArray = getJavaArrayClass();
+    //       console.log(JavaIntegerArray);
+    //       return JavaIntegerArray;
+    //    }
+    //    catch (error) {
+    //       //
+    //    }
+    // }
+    if (typeof Uint32Array !== 'undefined') {
+        return Uint32Array;
+    }
+    if (typeof Buffer !== 'undefined') {
+        return Buffer;
+    }
+    else {
+        // Return Array as a fallback
+        return Array;
+    }
+})();
+var Material = module.exports.Material = {
+    AIR: 0,
+    STONE: 1,
+    DIRT: 2,
+    GRASS: 3,
+    WOOD: 4,
+    LEAVES: 5,
+    SAPLING: 6,
+    WATER: 7,
+    all: function () {
+        var result = [];
+        for (var k in Object.keys(Material)) {
+            if (k === k.toUpperCase() && typeof Material[k] === 'number') {
+                result.push(k);
+            }
+        }
+        return result;
+    },
+    getMaterialName: function (material_id) {
+        for (var material_name in Material) {
+            if (Material[material_name] === material_id) {
+                return material_name;
+            }
+        }
+        throw new Error("No such material ".concat(material_id));
+    },
+    getMaterialByName: function (name) {
+        var k = ('' + name).toUpperCase();
+        return Material[k];
+    },
+    getColorOf: function (mat) {
+        // return material_color(material);
+        if (typeof mat === 'string') {
+            mat = Material.getMaterialByName(mat);
+        }
+        switch (mat) {
+            case Material.AIR:
+                return '#FFFFFF';
+            case Material.STONE:
+                return '#808080';
+            case Material.DIRT:
+                return '#964B00';
+            case Material.GRASS:
+                return '#32CD32';
+            case Material.WOOD:
+                return '#A0522D';
+            case Material.LEAVES:
+                return '#006400';
+            case Material.WATER:
+                return '#0000FF';
+            case Material.SAPLING:
+                return '#FF00FF';
+            default:
+                throw new Error("\"".concat(mat, "\""));
+                return '#000000';
+        }
+    },
+    validateMaterial: function (mat) {
+        if (typeof mat === 'string') {
+            mat = Material.getMaterialByName(mat);
+        }
+        if (typeof mat !== 'number') {
+            throw new Error("\"".concat(mat, "\""));
+        }
+        if (!Object.values(Material).includes(mat)) {
+            throw new Error("\"".concat(mat, "\" is not a valid material id"));
+        }
+    }
+};
+var block_fields = [
+    'type',
+    'light_level'
+    // 'state_id'
+];
+var BlockState = /** @class */ (function () {
+    function BlockState() {
+    }
+    return BlockState;
+}());
+var BlockData = /** @class */ (function () {
+    function BlockData(width, height, depth) {
+        this.width = width;
+        this.height = height;
+        this.depth = depth;
+        // Initialize blocks array with zeros
+        this.data = new UInt32(width * height * depth);
+        for (var i = 0; i < this.data.length; i++) {
+            this.data[i] = 0;
+        }
+        this.block_states = new Map();
+    }
+    // Convert 3D coordinates to a 1D index
+    BlockData.prototype.index = function (x, y, z) {
+        return x + y * this.width + z * this.width * this.height;
+    };
+    // Convert a 1D index to 3D coordinates
+    /*
+    private coords(index: number):[number, number, number] {
+       const z = Math.floor(index / (this.width * this.height));
+       const y = Math.floor((index % (this.width * this.height)) / this.width);
+       const x = index % this.width;
+       return [x, y, z];
+    }
+ 
+    // Get the block type at specified coordinates
+    getBlockType(x: number, y: number, z: number): number {
+       this.validateCoordinates(x, y, z);
+       const i = this.index(x, y, z);
+       if (this.data[i] == null) {
+          (this.data as any)[i] = 0;
+       }
+       return this.data[i];
+    }
+ 
+    // Set the block type at specified coordinates
+    setBlockType(x: number, y: number, z: number, blockType: number): void {
+       this.validateCoordinates(x, y, z);
+       // Ignore type errors here
+       (this.data as unknown as number[])[this.index(x, y, z)] = blockType;
+    }
+    */
+    // Adjust the coordinates conversion in BlockData
+    BlockData.prototype.coords = function (index) {
+        var z = this.depth - 1 - Math.floor(index / (this.width * this.height)); // Adjusted for top-down
+        var y = Math.floor((index % (this.width * this.height)) / this.width);
+        var x = index % this.width;
+        return [x, y, z];
+    };
+    // Get the block type at specified coordinates
+    BlockData.prototype.getBlockType = function (x, y, z) {
+        this.validateCoordinates(x, y, z);
+        var i = this.index(x, y, this.depth - 1 - z); // Adjusted for top-down
+        if (this.data[i] == null) {
+            this.data[i] = 0;
+        }
+        return this.data[i];
+    };
+    // Set the block type at specified coordinates
+    BlockData.prototype.setBlockType = function (x, y, z, blockType) {
+        this.validateCoordinates(x, y, z);
+        this.data[this.index(x, y, this.depth - 1 - z)] = blockType; // Adjusted for top-down
+    };
+    // Check if the coordinates are within bounds
+    BlockData.prototype.validateCoordinates = function (x, y, z) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
+            throw new RangeError("Coordinates out of bounds");
+        }
+    };
+    // Check if the coordinates are valid within bounds
+    BlockData.prototype.isValidCoord = function (x, y, z) {
+        return x >= 0 && x < this.width && y >= 0 && y < this.height && z >= 0 && z < this.depth;
+    };
+    /*
+     Return the lowest z-index which has a non-zero value
+    */
+    BlockData.prototype.getSunlitBlockAt = function (x, y) {
+        for (var z = this.depth - 1; z >= 0; z--) {
+            if (this.getBlockType(x, y, z) !== 0) {
+                return z;
+            }
+        }
+        return 0;
+    };
+    /*
+     Check whether the block at the given coordinates has any non-air blocks above it
+    */
+    /*
+     isSunlit(x: number, y: number, z: number): boolean {
+        for (let z2 = z + 1; z2 < this.depth; z2++) {
+           if (this.getBlockType(x, y, z2) !== 0) {
+              return false;
+           }
+        }
+  
+        return true;
+     }
+     */
+    // Get the dimensions of the block data
+    BlockData.prototype.getWidth = function () {
+        return this.width;
+    };
+    BlockData.prototype.getHeight = function () {
+        return this.height;
+    };
+    BlockData.prototype.getDepth = function () {
+        return this.depth;
+    };
+    return BlockData;
+}());
+var ChunkSection = /** @class */ (function (_super) {
+    __extends(ChunkSection, _super);
+    function ChunkSection(x, y, z) {
+        var _this = _super.call(this, ChunkSection.SECTION_SIZE, ChunkSection.SECTION_SIZE, ChunkSection.SECTION_SIZE) || this;
+        _this.pos = { x: x, y: y, z: z };
+        return _this;
+    }
+    ChunkSection.SECTION_SIZE = 16;
+    return ChunkSection;
+}(BlockData));
+var Chunk = /** @class */ (function () {
+    function Chunk(x, y) {
+        this.sections = [];
+        var sectionCount = Chunk.CHUNK_HEIGHT / Chunk.SECTION_HEIGHT;
+        this.pos = { x: x, y: y };
+        for (var i = 0; i < sectionCount; i++) {
+            this.sections.push(new ChunkSection(x, y, i * SECTION_HEIGHT));
+        }
+    }
+    Chunk.prototype.getBlockType = function (x, y, z) {
+        // if (x >= this.pos.x && y >= this.pos.y && x < CHUNK_WIDTH && y < CHUNK_HEIGHT) {
+        if (this.isWithinBounds(x, y, z)) {
+            var sectionIndex = Math.floor(z / Chunk.SECTION_HEIGHT);
+            var localZ = z % Chunk.SECTION_HEIGHT;
+            return this.sections[sectionIndex].getBlockType(x, y, localZ);
+        }
+        else {
+            // console.error(new RangeError(``))
+            throw new RangeError("".concat(x, ",").concat(y, " out of bounds"));
+        }
+        return null;
+    };
+    Chunk.prototype.setBlockType = function (x, y, z, type) {
+        if (this.isWithinBounds(x, y, z)) {
+            var sectionIndex = Math.floor(z / Chunk.SECTION_HEIGHT);
+            var localZ = z % Chunk.SECTION_HEIGHT;
+            this.sections[sectionIndex].setBlockType(x, y, localZ, type);
+        }
+        else {
+            throw new RangeError("Cannot set chunk[".concat(this.pos.x, ", ").concat(this.pos.y, "][").concat(x, ",").concat(y, ",").concat(z, "]"));
+        }
+    };
+    Chunk.prototype.isWithinBounds = function (x, y, z) {
+        return (x >= 0 && x < Chunk.CHUNK_WIDTH &&
+            y >= 0 && y < CHUNK_HEIGHT &&
+            z >= 0 && z < CHUNK_DEPTH);
+    };
+    Chunk.CHUNK_WIDTH = CHUNK_WIDTH;
+    Chunk.CHUNK_HEIGHT = CHUNK_DEPTH;
+    Chunk.SECTION_HEIGHT = SECTION_HEIGHT;
+    return Chunk;
+}());
+var WorldData = /** @class */ (function () {
+    function WorldData(nc_x, nc_y) {
+        this.nc_x = nc_x;
+        this.nc_y = nc_y;
+        this.chunks = [];
+        var chunkPos = { x: 0, y: 0, z: 0 };
+        for (var x = 0; x < nc_x; x++) {
+            this.chunks[x] = [];
+            for (var y = 0; y < nc_y; y++) {
+                this.chunks[x][y] = new Chunk(x, y);
+            }
+        }
+    }
+    WorldData.prototype.getChunk = function (chunkX, chunkY) {
+        /*
+        if (!this.chunks[chunkX]) {
+           this.chunks[chunkX] = [];
+        }
+        if (!this.chunks[chunkX][chunkZ]) {
+           this.chunks[chunkX][chunkZ] = new Chunk();
+        }
+        */
+        return this.chunks[chunkX][chunkY];
+    };
+    WorldData.prototype.getBlockType = function (x, y, z) {
+        var chunkX = Math.floor(x / CHUNK_WIDTH);
+        var chunkY = Math.floor(y / CHUNK_HEIGHT);
+        var chunk = this.getChunk(chunkX, chunkY);
+        var localX = x % CHUNK_WIDTH;
+        var localY = y % CHUNK_HEIGHT;
+        var sectionIndex = Math.floor(z / SECTION_HEIGHT);
+        var localZ = z % SECTION_HEIGHT;
+        var section = chunk.sections[sectionIndex];
+        return section.getBlockType(localX, localY, localZ);
+    };
+    WorldData.prototype.setBlockType = function (x, y, z, block_type) {
+        var chunkX = Math.floor(x / CHUNK_WIDTH);
+        var chunkY = Math.floor(y / CHUNK_HEIGHT);
+        var chunk = this.getChunk(chunkX, chunkY);
+        // const chunkZ = Math.floor(z / SECTION_HEIGHT);
+        var localX = x % CHUNK_WIDTH;
+        var localY = y % CHUNK_HEIGHT;
+        var sectionIndex = Math.floor(z / SECTION_HEIGHT);
+        var localZ = z % SECTION_HEIGHT;
+        var section = chunk.sections[sectionIndex];
+        return section.setBlockType(localX, localY, localZ, block_type);
+    };
+    WorldData.prototype.isWithinBounds = function (x, y, z) {
+        return x >= 0 && x < this.width &&
+            y >= 0 && y < this.height &&
+            z >= 0 && z < this.depth;
+    };
+    /*
+     return the lowest z-index which has a non-zero value
+    */
+    WorldData.prototype.getHighestNonAirBlockAt = function (x, y) {
+        //
+        for (var i = 0; i < this.depth; i++) {
+            var type = this.getBlockType(x, y, i);
+            // if we've found a non-air block
+            if (type !== 0) {
+                // then this is the first one we've encountered, and is therefore the topmost skyward block at this x,y 
+                return i;
+            }
+        }
+        // 
+        return 0;
+    };
+    WorldData.prototype.getSunlitBlockAt = function (x, y) {
+        return this.getHighestNonAirBlockAt(x, y);
+    };
+    /*
+     Check whether the block at the given coordinates has any non-air blocks above it
+    */
+    WorldData.prototype.isSunlit = function (x, y, z) {
+        return (this.getHighestNonAirBlockAt(x, y) == z);
+    };
+    Object.defineProperty(WorldData.prototype, "width", {
+        get: function () {
+            return this.nc_x * CHUNK_WIDTH;
+        },
+        enumerable: false,
+        configurable: true
+    });
+    Object.defineProperty(WorldData.prototype, "height", {
+        get: function () { return this.nc_y * CHUNK_HEIGHT; },
+        enumerable: false,
+        configurable: true
+    });
+    Object.defineProperty(WorldData.prototype, "depth", {
+        get: function () { return CHUNK_DEPTH; },
+        enumerable: false,
+        configurable: true
+    });
+    WorldData.prototype.forEachBlock = function (options, visit_cb) {
+        var _a, _b, _c, _d, _e, _f;
+        options = _.defaults(options, {
+            x: null, y: null, z: null,
+            xmin: null, xmax: null,
+            ymin: null, ymax: null,
+            zmin: null, zmax: null,
+        });
+        var xmin = (_a = options.xmin) !== null && _a !== void 0 ? _a : 0;
+        var xmax = (_b = options.xmax) !== null && _b !== void 0 ? _b : this.width - 1;
+        var ymin = (_c = options.ymin) !== null && _c !== void 0 ? _c : 0;
+        var ymax = (_d = options.ymax) !== null && _d !== void 0 ? _d : this.height - 1;
+        var zmin = (_e = options.zmin) !== null && _e !== void 0 ? _e : 0;
+        var zmax = (_f = options.zmax) !== null && _f !== void 0 ? _f : this.depth - 1;
+        /* all blocks - the default case */
+        for (var x = xmin; x <= xmax; x++) {
+            for (var y = ymin; y <= ymax; y++) {
+                for (var z = zmin; z <= zmax; z++) {
+                    visit_cb(x, y, z);
+                }
+            }
+        }
+    };
+    return WorldData;
+}());
+module.exports.WorldData = WorldData;
+module.exports.CHUNK_WIDTH = CHUNK_WIDTH;
+module.exports.CHUNK_HEIGHT = CHUNK_HEIGHT;
+module.exports.CHUNK_DEPTH = CHUNK_DEPTH;
+// const world = new WorldData(15, 15);
+// world.setBlockType(0, 0, 0, 1);
+// world.setBlockType(1, 0, 0, 2);
+// world.setBlockType(2, 0, 0, 3);
+// world.setBlockType(0, 1, 0, 4);
+// console.log(world.getBlockType(0, 0, 0));
+// console.log(world.getBlockType(1, 0, 0));
+// console.log(world.getBlockType(2, 0, 0));
+// console.log(world.getBlockType(0, 1, 0));
+// console.log(world.getBlockType(5, 0, 0));
+// // console.log(JSON.stringify(world));
+// console.log(
+//    world.width, world.height, world.depth
+// )
+function run_tests() {
+    console.log("Running tests...");
+    test_BlockData();
+    test_Chunk();
 }
+function test_BlockData() {
+    var bd = new BlockData(16, 16, 16);
+    bd.setBlockType(0, 0, 0, 1);
+    bd.setBlockType(1, 0, 0, 2);
+    bd.setBlockType(2, 0, 0, 3);
+    bd.setBlockType(0, 1, 0, 4);
+    assert.strictEqual(bd.getBlockType(0, 0, 0), 1, "getBlockType failed");
+    assert.strictEqual(bd.getBlockType(1, 0, 0), 2, "getBlockType failed");
+    assert.strictEqual(bd.getBlockType(2, 0, 0), 3, "getBlockType failed");
+    assert.strictEqual(bd.getBlockType(0, 1, 0), 4, "getBlockType failed");
+}
+function test_Chunk() {
+    var chunk = new Chunk(0, 0);
+    chunk.setBlockType(0, 0, 0, 1);
+    chunk.setBlockType(1, 0, 0, 2);
+    chunk.setBlockType(2, 0, 0, 3);
+    chunk.setBlockType(0, 1, 0, 4);
+    assert.strictEqual(chunk.getBlockType(0, 0, 0), 1, "getBlockType failed");
+    assert.strictEqual(chunk.getBlockType(1, 0, 0), 2, "getBlockType failed");
+    assert.strictEqual(chunk.getBlockType(2, 0, 0), 3, "getBlockType failed");
+    assert.strictEqual(chunk.getBlockType(0, 1, 0), 4, "getBlockType failed");
+}
+run_tests();
 
+}).call(this)}).call(this,require("buffer").Buffer)
+},{"./geometry":3,"assert":50,"buffer":55,"underscore":48}],3:[function(require,module,exports){
+var Rect3D = /** @class */ (function () {
+    function Rect3D(x, y, z, length, width, height) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.length = length;
+        this.width = width;
+        this.height = height;
+    }
+    Rect3D.prototype.volume = function () {
+        return this.length * this.width * this.height;
+    };
+    Rect3D.prototype.contains = function (point) {
+        var px = point[0], py = point[1], pz = point[2];
+        return px >= this.x && px <= this.x + this.length &&
+            py >= this.y && py <= this.y + this.width &&
+            pz >= this.z && pz <= this.z + this.height;
+    };
+    Rect3D.prototype.surfaceArea = function () {
+        return 2 * (this.length * this.width + this.width * this.height + this.height * this.length);
+    };
+    return Rect3D;
+}());
+module.exports.Rect3D = Rect3D;
+function ptdiff(a, b) {
+    return {
+        x: a.x - b.x,
+        y: a.y - b.y,
+        z: a.z - b.z
+    };
+}
+function ptsum(a, b) {
+    return {
+        x: a.x + b.x,
+        y: a.y + b.y,
+        z: a.z + b.z
+    };
+}
+module.exports.ptdiff = ptdiff;
+module.exports.ptsum = ptsum;
 
-
-_.extend(module.exports, {
-   a_star: a_star
-});
-},{"./voxeldata":6,"underscore":47}],2:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 
 var nj = require('numjs');
 const $ = require('jquery');
@@ -162,10 +566,17 @@ var Material = w.Material;
 var TopDownRenderer = require('./render2d').TopDownRenderer;
 
 let world = new World({
-   size: [200, 200, 75]
+   size: [500, 500, 64*2]
 });
-
-console.log(world);
+world.data.forEachBlock({}, (x, y, z) => {
+   if (z === 5) {
+      world.data.setBlockType(x, y, z, Material.GRASS);
+   } 
+   else {
+      world.data.setBlockType(x, y, z, Material.AIR);
+   }
+});
+console.log(world.data.getBlockType(33, 33, 5));
 
 let renderer = new TopDownRenderer(world);
 
@@ -193,10 +604,11 @@ let canvas = document.getElementById('box-canvas');
 let renderer = new Renderer3d(canvas, world);
 */
 
-},{"./render2d":5,"./world":7,"jquery":17,"numjs":43}],3:[function(require,module,exports){
+},{"./render2d":7,"./world":8,"jquery":18,"numjs":44}],5:[function(require,module,exports){
 
 const _ = require('underscore');
-const v = require('./voxeldata');
+const v = require('./blockdata');
+const geom = require('./geometry');
 const Material = v.Material;
 
 const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
@@ -209,24 +621,44 @@ console.log('non-solids=', non_solids);
 console.log('solids=', solid_materials);
 
 
-const directions = [
-   { x: 0, y: 1, z: 0 },   // Forward
-   { x: 0, y: -1, z: 0 },  // Backward
-   { x: 1, y: 0, z: 0 },   // Right
-   { x: -1, y: 0, z: 0 },  // Left
-   { x: 0, y: 0, z: -1 },   // Up
-   { x: 0, y: 0, z: 1 },  // Down
-];
+const directions = {
+   Forward: { x: 0, y: 1, z: 0 },   // Forward
+   Backward: { x: 0, y: -1, z: 0 },  // Backward
+   Right: { x: 1, y: 0, z: 0 },   // Right
+   Left: { x: -1, y: 0, z: 0 },  // Left
+   Up: { x: 0, y: 0, z: 1 },   // Up
+   Down: { x: 0, y: 0, z: -1 },  // Down
+
+   ForwardRight: { x: 1, y: 1, z: 0 },  // Forward-Right
+   ForwardLeft: { x: -1, y: 1, z: 0 }, // Forward-Left
+   BackwardRight: { x: 1, y: -1, z: 0 }, // Backward-Right
+   BackwardLeft: { x: -1, y: -1, z: 0 },// Backward-Left
+
+   UpRight: { x: 1, y: 0, z: 1 },  // Up-Right
+   UpLeft: { x: -1, y: 0, z: 1 }, // Up-Left
+   DownRight: { x: 1, y: 0, z: -1 }, // Down-Right
+   DownLeft: { x: -1, y: 0, z: -1 },// Down-Left
+
+   ForwardUp: { x: 0, y: 1, z: 1 },  // Forward-Up
+   ForwardDown: { x: 0, y: 1, z: -1 }, // Forward-Down
+   BackwardUp: { x: 0, y: -1, z: 1 }, // Backward-Up
+   BackwardDown: { x: 0, y: -1, z: -1 },// Backward-Down
+
+   RightUp: { x: 1, y: 0, z: 1 },  // Right-Up
+   RightDown: { x: 1, y: 0, z: -1 }, // Right-Down
+   LeftUp: { x: -1, y: 0, z: 1 }, // Left-Up
+   LeftDown: { x: -1, y: 0, z: -1 },// Left-Down
+};
 
 const block = (world, ...args) => {
-   if (world.voxelMaterialData.isValidCoord(...args)) {
-      return world.getBlock(...args);
+   if (world.data.isWithinBounds(...args)) {
+      return world.data.getBlockType(...args);
    }
    return null;
 };
-var isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
-var isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
 
+const isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
+const isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
 
 
 class Node {
@@ -243,10 +675,36 @@ class Node {
       this.gCost = Infinity; // Cost from start to this node
       this.hCost = 0; // Heuristic cost to end node
       this.parent = null; // For path reconstruction
+
+      // Connections stored by 'key' with mutual status
+      this.connections = {};
+   }
+
+   isConnectedTo(other) {
+      if (other == this) return false;
+
+      const otherKey = other.key;
+      return this.connections.hasOwnProperty(otherKey);
+   }
+
+   connectTo(other, mutual = false) {
+      const otherKey = other.key;
+      this.connections[otherKey] = mutual ? "mutual" : "not mutual";
+
+      if (mutual) {
+         other.connectTo(this, false);
+      }
    }
 
    get fCost() {
       return this.gCost + this.hCost;
+   }
+
+   // _getKey(node) {
+   //    return `${node.x},${node.y},${node.z}`;
+   // }
+   get key() {
+      return `${this.x},${this.y},${this.z}`;
    }
 }
 
@@ -258,100 +716,130 @@ const toNode = (pos) => {
    }
 }
 
+function pkey(x, y, z) {
+   return `${x},${y},${z}`;
+}
+
 class AStar {
-   constructor(world, start_pos, end_pos) {
+   constructor(world) {
       this.world = world;
-      this.start_pos = start_pos;
-      this.end_pos = end_pos;
+      this.start_pos = null;
+      this.end_pos = null;
 
-      // this.visited = Set();
-      console.log('start_block=', Material.getMaterialName(block(world, start_pos.x, start_pos.y, start_pos.z)));
-      console.log('is_solid=', isSolid(world, start_pos.x, start_pos.y, start_pos.z));
-
-      const endBlock = block(world, end_pos.x, end_pos.y, end_pos.z);
-      if (isSolid(world, end_pos.x, end_pos.y, end_pos.z)) {
-         throw new Error('end_pos must be a non-solid block');
-      }
+      /*
+      valid moves between blocks will be stored here
+      as in `this.connections[poskey(pos)] = 
+      */
+      this._nodes = {};
    }
 
    poskey(pos) {
-      return `${pos.x},${pos.y},${pos.z}`;
+      return pkey(pos.x, pos.y, pos.z);
+   }
+
+   _nodeFor(x, y=null, z=null) {
+      var k;
+      if (typeof x === 'string' && y == null && z == null) {
+         k = x;
+      }
+      else {
+         k = pkey(x, y, z);
+      }
+
+      if (_.has(this._nodes, k)) {
+         return this._nodes[k];
+      }
+      else {
+         var node = new Node(x, y, z, true);
+         this._nodes[k] = node;
+         return node;
+      }
    }
 
    heuristic(a, b) {
-      // Using Manhattan distance for 3D
       return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
    }
 
    visit(pos) {
-      if (this.visited.has(poskey(pos))) {
+      if (this.visited.has(this.poskey(pos))) {
          return true;
       }
 
-      // Check if the position is valid
-      if (!this.world.voxelMaterialData.isValidCoord(pos.x, pos.y, pos.z)) {
+      if (!this.world.data.isValidCoord(pos.x, pos.y, pos.z)) {
          return false;
       }
 
-      // do the stuff
-
-      // record that we've already visited this position
-      this.visited.add(poskey(pos));
-      
-      // Return true if the visit was successful
+      this.visited.add(this.poskey(pos));
       return true;
    }
 
-   reconstructPath(node) {
-      //TODO
-   }
+   
 
    canWalkTo(x, y, z) {
       const world = this.world;
-      const vmd = world.voxelMaterialData;
+      const vmd = world.data;
       return (
-         vmd.isValidCoord(x, y, z) &&
+         vmd.isWithinBounds(x, y, z) &&
          isSolid(world, x, y, z)
-         // && isBelowAir(world, x, y, z)
-         // && vmd.isSunlit(x, y, z)
       );
    }
 
+/**
+ * Determines if a move from one block to another is valid.
+ *
+ * A move is considered valid if the two blocks are adjacent in 3D space,
+ * there are no solid blocks at the specified coordinates (ax, ay, az) and (bx, by, bz), 
+ * and there are solid blocks directly below them. Additionally, if the nodes
+ * representing these blocks are already connected, the move is valid.
+ *
+ * If the move is valid, it establishes a mutual connection between the nodes, preventing the need for adjacency checks and the like for subsequent calls
+ *
+ * @param {number} ax - The x-coordinate of the starting block.
+ * @param {number} ay - The y-coordinate of the starting block.
+ * @param {number} az - The z-coordinate of the starting block.
+ * @param {number} bx - The x-coordinate of the destination block.
+ * @param {number} by - The y-coordinate of the destination block.
+ * @param {number} bz - The z-coordinate of the destination block.
+ * @returns {boolean} - Returns true if the move is valid, false otherwise.
+ */
+   // _isValidMove(ax, ay, az, bx, by, bz) {
+   //    var apos = {x: ax, y: ay, z: az};
+   //    var bpos = {x: bx, y: by, z: bz};
+
+
+   // }
    isValidMove(ax, ay, az, bx, by, bz) {
       if (ax === bx && ay === by && az === bz) {
-         // non-movement is not valid
          return false;
       }
 
-      // check that the two positions are adjacent
+      var a = this._nodeFor(ax, ay, az);
+      var b = this._nodeFor(bx, by, bz);
+      if (a.isConnectedTo(b) || b.isConnectedTo(a)) {
+         return true;
+      }
+
       if (dist3d(ax, ay, az, bx, by, bz) > 2) {
          console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
          return false;
       }
 
       const world = this.world;
+      var apos = {x:ax, y:ay, z:az};
 
-      // is position 'a' a non-solid block with a solid block underneath it
       var is_a_standable = (!isSolid(world, ax, ay, az) && isSolid(world, ax, ay, az - 1));
-
-      // is position 'b' a non-solid block with a solid block underneath it
       var is_b_standable = (!isSolid(world, bx, by, bz) && isSolid(world, bx, by, bz - 1));
 
       let validity = (is_a_standable && is_b_standable);
       if (validity) {
-         // console.log(`(${ax},${ay},${az})->(${bx},${by},${bz}) is a valid move`);
+         a.connectTo(b, true);
+         b.connectTo(a, true);
       }
-      else {
 
-      }
       return validity;
    }
 
-   /**
-    * get list of Nodes representing valid coordinate nodes which are accessibly adjacent to the given node
-    * @param {Node} node
-    */
-   getNeighbors(node, grid=null) {
+   getNeighbors(node, grid = null) {
       const me = this;
       if (!this.neighborCache) this.neighborCache = {};
 
@@ -363,61 +851,75 @@ class AStar {
       const world = this.world;
       var x = node.x, y = node.y, z = node.z;
 
-      var vmd = world.voxelMaterialData;
+      var vmd = world.data;
       var results = [];
       
-      function visit(x, y, z) {
+      const visit = (x, y, z) => {
+         const dirpt = geom.ptdiff(node, {x:x, y:y, z:z});
+         const npt = geom.ptsum(node, dirpt);
+         const neighborBlockType = this.world.data.getBlockType(npt.x, npt.y, npt.z);
+
+         var direction_name = _.findKey(directions, v => pteq(v, dirpt));
+         console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
+
          if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
             results.push(new Node(x, y, z, true));
          }
       }
 
-      // forward
-      visit(x, y + 1, z);
-      //backward
-      visit(x, y - 1, z);
-      //right
-      visit(x + 1, y, z);
-      //left
-      visit(x - 1, y, z);
 
-      //up
-      //visit(x, y, z - 1);
-      //down
-      //visit(x, y, z + 1);
+      // visit(x, y + 1, z);//Forward
+      // visit(x, y - 1, z);//Backward
+      // visit(x + 1, y, z);//Left
+      // visit(x - 1, y, z);//Right
 
-      // up-right
-      visit(x + 1, y, z - 1);
-      // up-left
-      visit(x - 1, y, z - 1);
-      // up-forward
-      visit(x, y + 1, z - 1);
-      // up-backward
-      visit(x, y - 1, z - 1);
+      // visit(x + 1, y, z - 1);//Left/Down
+      // visit(x - 1, y, z - 1);
+      // visit(x, y + 1, z - 1);
+      // visit(x, y - 1, z - 1);
 
-      // down-right
-      visit(x + 1, y, z + 1);
-      // down-left
-      visit(x - 1, y, z + 1);
-      // down-forward
-      visit(x, y + 1, z + 1);
-      // down-backward
-      visit(x, y - 1, z + 1);
+      // visit(x + 1, y, z + 1);
+      // visit(x - 1, y, z + 1);
+      // visit(x, y + 1, z + 1);
+      // visit(x, y - 1, z + 1);
 
-      // results = results.map(toNode);
+      for (let k of _.keys(directions)) {
+         var p = geom.ptsum(node, directions[k]);
+         var blockType = Material.getMaterialName(this.world.data.getBlockType(p.x, p.y, p.z));
+         console.log(`${k}: ${blockType}`);
+         
+         if (this.isValidMove(node.x, node.y, node.z, p.x, p.y, p.z)) {
+            results.push(new Node(x, y, z, true));
+         }
+      }
 
       this.neighborCache[nckey] = results;
 
       return results;
    }
 
-   findpath(grid=null) {
+   findpath(start_pos, end_pos, grid = null, options=null) {
+      // Reset the costs on all cached Nodes
+      _.each(this._nodes, (node) => {
+         node.gCost = Infinity;
+         node.hCost = 0;
+         node.parent = null;
+      });
+
+      options = options || {};
+      //! will necessitate a BlockModJournal class of some kind to implement
+      const can_modify = options.can_modify || false; // whether block placement/removal may be part of the 'path'
+      const one_way = options.one_way || false; // should one-way paths be considered. i.e. jumping down to a position we couldn't have walked to
+
+      this.start_pos = start_pos;
+      this.end_pos = end_pos;
 
       const openSet = [];
       const closedSet = new Set();
 
-      var start = toNode(this.start_pos);
-      var end = toNode(this.end_pos);
+      var start = this._nodeFor(this.start_pos.x, this.start_pos.y, this.start_pos.z);
+      var end = this._nodeFor(this.end_pos.x, this.end_pos.y, this.end_pos.z);
+      console.log(`Plotting path from ${start.key} to ${end.key}`);
 
       openSet.push(start);
 
@@ -425,45 +927,27 @@ class AStar {
       start.hCost = this.heuristic(start, end);
 
       while (openSet.length > 0) {
-         // Sort openSet to get the node with the lowest fCost
          openSet.sort((a, b) => a.fCost - b.fCost);
          
-         // yunk said node off the beginning of the list
          const currentNode = openSet.shift();
+         console.log(currentNode);
 
-         // if currentNode is the goal point
+         // If we have reached a suitable target position
          if (pteq(currentNode, end)) {
-            // Reconstruct the path
-            const path = [];
-
-            let temp = currentNode;
-            while (temp) {
-               path.push(temp);
-               temp = temp.parent;
-            }
-            
-            // Return the path from start to end
-            return path.reverse(); 
+            return this.reconstructPath(currentNode);
          }
 
-         // assuming we haven't reached the end yet
-
-         // 'close' current node
          closedSet.add(currentNode);
 
          const neighbors = this.getNeighbors(currentNode);
-         if (neighbors.length == 0) {
-            throw new Error('there should always be neighbors');
-         }
+         console.log(neighbors.length);
 
          for (const neighbor of neighbors) {
-            // if `neighbor` is in `closedSet`
             if (_.any(closedSet, x => pteq(x, neighbor))) {
                continue;
             }
 
-
-            const tentativeGCost = currentNode.gCost + 1; // Assuming each step cost is 1
+            const tentativeGCost = currentNode.gCost + 1;
 
             if (tentativeGCost < neighbor.gCost) {
                neighbor.parent = currentNode;
@@ -474,11 +958,27 @@ class AStar {
                   openSet.push(neighbor);
                }
             }
+
+            
          }
       }
 
-      // Return an empty path if no path is found
-      return []; 
+      console.log('nope');
+      return [];
+   }
+
+   reconstructPath(currentNode) {
+      const path = [];
+
+      let temp = currentNode;
+      while (temp) {
+         path.push(temp);
+
+         temp = temp.parent;
+      }
+
+      console.log('ween');
+      return path.reverse();
    }
 }
 
@@ -499,10 +999,10 @@ function dist3d(ax, ay, az, bx, by, bz) {
    return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-},{"./voxeldata":6,"underscore":47}],4:[function(require,module,exports){
+},{"./blockdata":2,"./geometry":3,"underscore":48}],6:[function(require,module,exports){
 
 const _ = require('underscore');
-const v = require('./voxeldata');
+const v = require('./blockdata');
 const Material = v.Material;
 const behavior = require('./behavior');
 
@@ -519,6 +1019,21 @@ class Person extends Entity {
 
       this.territory = null;
       this.master = null;
+      this.tasks = [
+         new behavior.LaunchTask((person, n) => {
+            console.log('peen');
+            var targetPos = { x: 0, y: 0, z: this.world.data.getSunlitBlockAt(0, 0) + 1 };
+
+            let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
+            let walk = new behavior.WalkPath(path);
+
+            var revpath = path.slice().reverse();
+            let walk_back = walk.next_task = new behavior.WalkPath(revpath);
+            walk_back.next_task = walk;
+
+            return walk;
+         })
+      ];
    }
 
    setPos(x, y, z) {
@@ -541,38 +1056,21 @@ class Person extends Entity {
       );
    }
 
-   isLandOwner() {
-      if (this.territory === null) {
-         return false;
-      }
-      else if (this.master == null) {
-         return true;
-      }
-      else {
-         return false;
-      }
-   }
+   calcPathTo(x, y, z, opts=null) {
+      var ast = new pf.AStar(this.world);
 
-   getKing() {
-      if (this.master === null) {
-         return this;
-      }
-      
-      return this.master.getKing();
+      return ast.findpath(_.clone(this.pos), {x:x, y:y, z:z}, null, opts);
    }
 
    tick(world, n) {
       this.world = world;
 
-      const blocks = world.voxelMaterialData;
+      const blocks = world.data;
 
-      if (!this._activePath) {
-         var targetPos = { x: 0, y: 0, z: blocks.getSunlitBlockAt(0, 0)+1};
-         var ast = new pf.AStar(this.world, _.clone(this.pos), targetPos);
-
-         this._activePath = ast.findpath();
-
-         console.log(this._activePath);
+      for (let i = 0; i < this.tasks.length; i++) {
+         if (!this.tasks[i]) continue;
+         var task = this.tasks[i];
+         this.tasks[i] = task.tick(this, n);
       }
    }
 }
@@ -581,7 +1079,7 @@ const pf = require('./pathfinding');
 
 
 module.exports['Person'] = Person;
-},{"./behavior":1,"./pathfinding":3,"./voxeldata":6,"underscore":47}],5:[function(require,module,exports){
+},{"./behavior":1,"./blockdata":2,"./pathfinding":5,"underscore":48}],7:[function(require,module,exports){
 var nj = require('numjs');
 const $ = require('jquery');
 
@@ -612,7 +1110,7 @@ class TopDownRenderer {
       this.context = this.canvasElem.getContext('2d');
 
       if (!world) {
-         world = new world();
+         world = new World();
       }
 
       this.world = world;
@@ -715,7 +1213,7 @@ class TopDownRenderer {
 
    onCanvasRightClicked(x, y) {
       const me = this;
-      const vmd = me.world.voxelMaterialData;
+      const vmd = me.world.data;
       const blockType = 1; // Example block type
       let blockSize = 2.0 * this.viewRect.zoomFactor;
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
@@ -726,7 +1224,7 @@ class TopDownRenderer {
          const z = this.topBlocks.get(worldX, worldY);
   
          var guy = new Person();
-         guy.setPos(worldX, worldY, z + 1);
+         guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
       }
       catch (error) {
@@ -737,7 +1235,7 @@ class TopDownRenderer {
 
    onCanvasClicked(x, y) {
       const me = this;
-      const vmd = me.world.voxelMaterialData;
+      const vmd = me.world.data;
       const blockType = 1; // Example block type
       let blockSize = 2.0 * this.viewRect.zoomFactor;
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
@@ -747,7 +1245,7 @@ class TopDownRenderer {
          // Select the block at the clicked position
          const z = this.topBlocks.get(worldX, worldY);
 
-         const selectedBlock = this.world.getBlock(worldX, worldY, z);
+         const selectedBlock = vmd.getBlockType(worldX, worldY, z);
          if (selectedBlock !== 0) { // Assuming 0 represents an empty block
             vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
             
@@ -777,8 +1275,8 @@ class TopDownRenderer {
    }
 
    sample_voxels_topdown() {
-      let world_shape = this.world.voxelMaterialData.shape;
-      let vmd = this.world.voxelMaterialData;
+      let world_shape = this.world.data.shape;
+      let vmd = this.world.data;
       let width = vmd.width, height = vmd.height, depth = vmd.depth;
 
       let c = this.context;
@@ -802,7 +1300,10 @@ class TopDownRenderer {
                z = 0;
             }
 
-            let material = vmd.getBlock(x, y, z);
+            let material = vmd.getBlockType(x, y, z);
+            if (material == null) {
+               continue;
+            }
 
             let cell_color = Material.getColorOf(material);
 
@@ -851,285 +1352,76 @@ class TopDownRenderer {
 
 module.exports['TopDownRenderer'] = TopDownRenderer;
 // module.exports
-},{"./person":4,"./world":7,"jquery":17,"numjs":43}],6:[function(require,module,exports){
-(function (Buffer){(function (){
-
-
-
-// get reference to the most efficient available array-container for unsigned integers
-const UInt32 = (function() {
-   if (typeof Uint32Array !== 'undefined') {
-      return Uint32Array;
-   } 
-   else if (typeof Buffer !== 'undefined') {
-      return Buffer;
-   }
-   else {
-      // throw new Error("No efficient array-container for unsigned 32-bit integers was found");
-      return Array;
-   }
-}());
-
-
-const Material = module.exports.Material = {
-   AIR: 0,
-
-   STONE: 1,
-   DIRT: 2,
-   GRASS: 3,
-
-   WOOD: 4,
-   LEAVES: 5,
-   SAPLING: 6,
-
-   WATER: 7,
-
-   all() {
-      let result = [];
-      for (let k in Material) {
-         if (k === k.toUpperCase() && typeof Material[k] === 'number') {
-            result.push(k);
-         }
-      }
-
-      return result;
-   },
-
-   getMaterialName(material_id) {
-      for (let material_name in Material) {
-         if (Material[material_name] === material_id) {
-            return material_name;
-         }
-      }
-
-      return null;
-   },
-
-   getMaterialByName(name) {
-      let k = ('' + name).toUpperCase();
-      return Material[k];
-   },
-
-   getColorOf(mat) {
-      // return material_color(material);
-      if (typeof mat === 'string') {
-         mat = Material.getMaterialByName(mat);
-      }
-
-      switch (mat) {
-         case Material.AIR:
-            return '#FFFFFF';
-         case Material.STONE:
-            return '#808080';
-         case Material.DIRT:
-            return '#964B00';
-         case Material.GRASS:
-            return '#32CD32';
-         case Material.WOOD:
-            return '#A0522D';
-         case Material.LEAVES:
-            return '#006400';
-         case Material.WATER:
-            return '#0000FF';
-         case Material.SAPLING:
-            return '#FF00FF';
-         default:
-            throw new Error(`"${mat}"`);
-            return '#000000';
-      }
-   },
-
-   validateMaterial(mat) {
-      if (typeof mat === 'string') {
-         mat = Material.getMaterialByName(mat);
-      }
-
-      if (typeof mat !== 'number') {
-         throw new Error(`"${mat}"`);
-      }
-
-      if (!Object.values(Material).includes(mat)) {
-         throw new Error(`"${mat}" is not a valid material id`);
-      }
-   }
-};
-
-
-
-class BlockData {
-   constructor(width, height, depth) {
-      this.width = width;
-      this.height = height;
-      this.depth = depth;
-
-      this.blocks = new UInt32(width * height * depth); // Flat array for blocks
-      for (let i = 0; i < this.blocks.length; i++) {
-         this.blocks[i] = 0;
-      }
-   }
-
-   // Convert 3D coordinates to a 1D index
-   index(x, y, z) {
-      return x + (y * this.width) + (z * this.width * this.height);
-   }
-
-   //Convert index to 3D coordinates
-   coords(index) {
-      let z = Math.floor(index / (this.width * this.height));
-      let y = Math.floor((index % (this.width * this.height)) / this.width);
-      let x = index % this.width;
-      return [x, y, z];
-   }
-
-   // Get the block type at specified coordinates
-   getBlock(x, y, z) {
-      this.validateCoordinates(x, y, z);
-      return this.blocks[this.index(x, y, z)];
-   }
-
-   // Set the block type at specified coordinates
-   setBlock(x, y, z, blockType) {
-      this.validateCoordinates(x, y, z);
-      // this.validateMaterial(blockType);
-      this.blocks[this.index(x, y, z)] = blockType;
-   }
-
-   // Check if the coordinates are within bounds
-   validateCoordinates(x, y, z) {
-      if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
-         throw new RangeError("Coordinates out of bounds");
-      }
-      //farts
-      //farts
-   }
-
-   isValidCoord(x, y, z) {
-      if (x < 0 || x >= this.width || y < 0 || y >= this.height || z < 0 || z >= this.depth) {
-         //throw new RangeError("Coordinates out of bounds");
-         return false;
-      }
-      return true;
-   }
-
-   /*
-    return the lowest z-index which has a non-zero value
-   */
-   getSunlitBlockAt(x, y) {
-      // looks right
-      for (let z = this.depth - 1; z >= 0; z--) {
-         if (this.getBlock(x, y, z) !== 0) {
-            return z;
-         }
-      }
-
-      return 0;
-   }
-
-   /*
-    Check whether the block at the given coordinates has any non-air blocks above it
-   */
-  isSunlit(x, y, z) {
-    for (let z2 = z + 1; z2 < this.depth; z2++) {
-      if (this.getBlock(x, y, z2) !== 0) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-   // Get the dimensions of the block data
-   getWidth() {
-      return this.width;
-   }
-
-   getHeight() {
-      return this.height;
-   }
-
-   getDepth() {
-      return this.depth;
-   }
-}
-
-module.exports['BlockData'] = BlockData;
-
-// Example usage
-const width = 10, height = 10, depth = 10;
-const world = new BlockData(width, height, depth, Uint32Array); // Using Uint32Array
-
-// Set a block type at (1, 2, 3)
-world.setBlock(1, 2, 3, 5); // Assume '5' represents a specific block type
-
-// Get the block type at (1, 2, 3)
-const blockType = world.getBlock(1, 2, 3);
-console.log("Block type at (1, 2, 3):", blockType);
-
-}).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":50}],7:[function(require,module,exports){
+},{"./person":6,"./world":8,"jquery":18,"numjs":44}],8:[function(require,module,exports){
 
 var nj = require('numjs');
 var _ = require('underscore');
-var vd = require('./voxeldata');
+var vd = require('./blockdata');
 var Material = vd.Material;
 var BlockData = vd.BlockData;
 
+var wd = require('./blockdata');
 var gen = require('./worldgen');
+
 
 class World {
    constructor(config) {
       if (config == null) config = {};
+
       config = _.defaults(config, {
          size: [500, 500, 75],
-
       });
 
       let voxel_matrix_shape = config.size;
-      let voxel_attributes = [
-         'material'
-      ];
       
-      this.voxelMaterialData = new BlockData(
-         voxel_matrix_shape[0],
-         voxel_matrix_shape[1],
-         voxel_matrix_shape[2]
+      this.data = new wd.WorldData(
+         Math.floor(voxel_matrix_shape[0]/wd.CHUNK_WIDTH),
+         Math.floor(voxel_matrix_shape[1]/wd.CHUNK_HEIGHT)
       );
-
+      
       this.entities = new Array();
-
-      this.initialize_flatgrass();
+      
+      //TODO set all blocks to grass
    }
 
    getBlock(x, y, z) {
-      return this.voxelMaterialData.getBlock(x, y, z);
+      return this.data.getBlockType(x, y, z);
    }
 
    getWidth() {
-      return this.voxelMaterialData.width;
+      return this.data.width;
    }
 
    getHeight() {
-      return this.voxelMaterialData.height;
+      return this.data.height;
    }
 
    getDepth() {
-      return this.voxelMaterialData.depth;
+      return this.data.depth;
    }
 
    initialize_flatgrass() {
-      let vmd = this.voxelMaterialData;
+      let vmd = this.data;
       let width = vmd.width, height = vmd.height, depth = vmd.depth;
 
+      console.log(`World dimensions - Width: ${width}, Height: ${height}, Depth: ${depth}`);
+      const put = (x,y,z,type)=>{vmd.setBlockType(x,y,z,type);}
+
+      // put down the blocks of the world
       for (let x = 0; x < width; x++) {
          for (let y = 0; y < height; y++) {
             for (let z = 0; z < depth; z++) {
-               if (z < 25) {
-                  vmd.setBlock(x, y, z, Material.STONE);
-               } 
-               else if (z < 50) {
-                  vmd.setBlock(x, y, z, Material.DIRT);
-               } 
-               else if (z === 50) {
-                  vmd.setBlock(x, y, z, Material.GRASS);
+               if (z <= 3) {
+                  put(x, y, z, Material.AIR);
+               }
+               else if (z === 4) {
+                  put(x, y, z, Material.GRASS);
+               }
+               else if (z > 4) {
+                  put(x, y, z, Material.STONE);
+               }
+               else if (z === depth-1) {
+                  put(x, y, z, Material.WATER);
                }
             }
          }
@@ -1144,24 +1436,28 @@ class World {
     */
    tick(n) {
       // block-related logic
-      for (let i = 0; i < this.voxelMaterialData.blocks.length; i++) {
-         var mat = this.voxelMaterialData.blocks[i];
+      for (let i = 0; i < this.data.chunks.length; i++) {
+         for (let j = 0; j < this.data.chunks[i].length; j++) {
+            for (let k = 0; k < this.data.chunks[i][j].length; k++) {
+               var mat = this.data.chunks[i][j][k];
 
-         // occasionally plant saplings on top of 'sunlit' grass blocks
-         if (mat == Material.GRASS && Math.random() < 0.000002) {
-            var coords = this.voxelMaterialData.coords(i);
+               // occasionally plant saplings on top of 'sunlit' grass blocks
+               if (mat == Material.GRASS && Math.random() < 0.000002) {
+                  var coords = this.data.coords(i, j, k);
 
-            // Check if the block above is directly under open sky before planting sapling
-            if (this.voxelMaterialData.isSunlit(coords[0], coords[1], coords[2] + 1)) {
-               // plant the sapling
-               this.voxelMaterialData.setBlock(coords[0], coords[1], coords[2] + 1, Material.SAPLING);
+                  // Check if the block above is directly under open sky before planting sapling
+                  if (this.data.isSunlit(coords[0], coords[1], coords[2] + 1)) {
+                     // plant the sapling
+                     this.data.setBlockType(coords[0], coords[1], coords[2] + 1, Material.SAPLING);
+                  }
+               }
+
+               // occasionally grow saplings into trees
+               if (mat == Material.SAPLING && Math.random() < 0.013) {
+                  var coords = this.data.coords(i, j, k);
+                  gen.grow_tree(this, coords[0], coords[1], coords[2]);
+               }
             }
-         }
-
-         // occasionally grow saplings into trees
-         if (mat == Material.SAPLING && Math.random() < 0.013) {
-            var coords = this.voxelMaterialData.coords(i);
-            gen.grow_tree(this, coords[0], coords[1], coords[2]);
          }
       }
 
@@ -1180,9 +1476,27 @@ class World {
 
 module['exports']['World'] = World;
 module['exports']['Material'] = Material;
-},{"./voxeldata":6,"./worldgen":8,"numjs":43,"underscore":47}],8:[function(require,module,exports){
 
-var v = require('./voxeldata');
+function test_world() {
+   var w = new World();
+   console.log(`World Dimensions - Width: ${w.getWidth()}, Height: ${w.getHeight()}, Depth: ${w.getDepth()}`);
+
+   w.data.forEachBlock({}, (x, y, z) => {
+      if (z === 5) {
+         w.data.setBlockType(x, y, z, Material.GRASS);
+      } else {
+         w.data.setBlockType(x, y, z, Material.AIR);
+      }
+   });
+
+   w.tick(1);
+   
+   
+}
+
+},{"./blockdata":2,"./worldgen":9,"numjs":44,"underscore":48}],9:[function(require,module,exports){
+
+var v = require('./blockdata');
 var Material = v.Material;
 // var World = require('./world').World;
 
@@ -1190,28 +1504,28 @@ var Material = v.Material;
  * Grows a tree at a given position in the world. The tree is grown
  * upwards, centered on the specified position, and consists of a
  * trunk and a canopy of leaves.
- * @param {World} world world to grow the tree in
+ * @param {WorldData} world world to grow the tree in
  * @param {number} x x position of the tree
  * @param {number} y y position of the tree
  * @param {number} z z position of the tree
  */
 function grow_tree(world, x, y, z) {
    try {
-      const vd = world.voxelMaterialData;
+      const vd = world.data;
 
       // Check if the block at the specified position is a sapling
-      if (vd.getBlock(x, y, z) === Material.SAPLING) {
+      if (vd.getBlockType(x, y, z) === Material.SAPLING) {
          // Grow a tree
          const treeHeight = 5;
          for (let i = 0; i < treeHeight; i++) {
             // Set each block in the tree to wood
-            vd.setBlock(x, y, z-i, Material.WOOD);
+            vd.setBlock(x, y, z+1, Material.WOOD);
          }
 
-         /*
          // Set the top block of the tree to leaves
-         vd.setBlock(x, y, z + treeHeight, Material.LEAVES);
-
+         vd.setBlock(x, y, 1+z+treeHeight, Material.LEAVES);
+         
+         /*
          // Grow a square of leaves around the WOOD block right below the top of the tree
          for (let i = -1; i <= 1; i++) {
             for (let j = -1; j <= 1; j++) {
@@ -1235,7 +1549,7 @@ function grow_tree(world, x, y, z) {
    }
 }
 module.exports['grow_tree'] = grow_tree;
-},{"./voxeldata":6}],9:[function(require,module,exports){
+},{"./blockdata":2}],10:[function(require,module,exports){
 /**
  * Bit twiddling hacks for JavaScript.
  *
@@ -1441,7 +1755,7 @@ exports.nextCombination = function(v) {
 }
 
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict"
 
 var createThunk = require("./lib/thunk.js")
@@ -1552,7 +1866,7 @@ function compileCwise(user_args) {
 
 module.exports = compileCwise
 
-},{"./lib/thunk.js":12}],11:[function(require,module,exports){
+},{"./lib/thunk.js":13}],12:[function(require,module,exports){
 "use strict"
 
 var uniq = require("uniq")
@@ -1912,7 +2226,7 @@ function generateCWiseOp(proc, typesig) {
 }
 module.exports = generateCWiseOp
 
-},{"uniq":48}],12:[function(require,module,exports){
+},{"uniq":49}],13:[function(require,module,exports){
 "use strict"
 
 // The function below is called when constructing a cwise function object, and does the following:
@@ -2000,9 +2314,9 @@ function createThunk(proc) {
 
 module.exports = createThunk
 
-},{"./compile.js":11}],13:[function(require,module,exports){
+},{"./compile.js":12}],14:[function(require,module,exports){
 module.exports = require("cwise-compiler")
-},{"cwise-compiler":10}],14:[function(require,module,exports){
+},{"cwise-compiler":11}],15:[function(require,module,exports){
 "use strict"
 
 function dupe_array(count, value, i) {
@@ -2052,7 +2366,7 @@ function dupe(count, value) {
 }
 
 module.exports = dupe
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 "use strict"
 
 function iota(n) {
@@ -2064,7 +2378,7 @@ function iota(n) {
 }
 
 module.exports = iota
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -2087,7 +2401,7 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -12805,7 +13119,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 (function (global){(function (){
 /**
  * @license
@@ -30018,7 +30332,7 @@ return jQuery;
 }.call(this));
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 'use strict'
 
 var ops = require('ndarray-ops')
@@ -30101,7 +30415,7 @@ function ndfft(dir, x, y) {
 }
 
 module.exports = ndfft
-},{"./lib/fft-matrix.js":20,"ndarray":24,"ndarray-ops":23,"typedarray-pool":46}],20:[function(require,module,exports){
+},{"./lib/fft-matrix.js":21,"ndarray":25,"ndarray-ops":24,"typedarray-pool":47}],21:[function(require,module,exports){
 var bits = require('bit-twiddle')
 
 function fft(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
@@ -30320,7 +30634,7 @@ function fftBluestein(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
   }
 }
 
-},{"bit-twiddle":9}],21:[function(require,module,exports){
+},{"bit-twiddle":10}],22:[function(require,module,exports){
 "use strict"
 
 module.exports = matrixProduct
@@ -30383,7 +30697,7 @@ function matrixProduct(out, a, b, alpha, beta) {
   }
   return proc(out, a, b, alpha, beta)
 }
-},{"./lib/planner.js":22}],22:[function(require,module,exports){
+},{"./lib/planner.js":23}],23:[function(require,module,exports){
 "use strict"
 
 module.exports = generateMatrixProduct
@@ -30663,7 +30977,7 @@ function generateMatrixProduct(outType, aType, bType, useAlpha, useBeta) {
   var proc = new Function(code.join(""))
   return proc()
 }
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 "use strict"
 
 var compile = require("cwise-compiler")
@@ -31126,7 +31440,7 @@ exports.equals = compile({
 
 
 
-},{"cwise-compiler":10}],24:[function(require,module,exports){
+},{"cwise-compiler":11}],25:[function(require,module,exports){
 var iota = require("iota-array")
 var isBuffer = require("is-buffer")
 
@@ -31477,7 +31791,7 @@ function wrappedNDArrayCtor(data, shape, stride, offset) {
 
 module.exports = wrappedNDArrayCtor
 
-},{"iota-array":15,"is-buffer":16}],25:[function(require,module,exports){
+},{"iota-array":16,"is-buffer":17}],26:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -31485,7 +31799,7 @@ module.exports = {
   nFloatingValues: 5
 };
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -31500,7 +31814,7 @@ module.exports = {
   array: Array
 };
 
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -31521,7 +31835,7 @@ module.exports = {
   }
 };
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 'use strict';
 
 module.exports = function areaSum (h0, w0, H, W, SAT) {
@@ -31535,7 +31849,7 @@ module.exports = function areaSum (h0, w0, H, W, SAT) {
         : -SAT.selection.get(y1, x0) + SAT.selection.get(y1, x1);
 };
 
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 'use strict';
 
 var areaSum = require('./area-sum');
@@ -31544,7 +31858,7 @@ module.exports = function areaValue (h0, w0, H, W, SAT) {
   return areaSum(h0, w0, H, W, SAT) / (H * W);
 };
 
-},{"./area-sum":28}],30:[function(require,module,exports){
+},{"./area-sum":29}],31:[function(require,module,exports){
 (function (__dirname){(function (){
 'use strict';
 var path = require('path');
@@ -31616,7 +31930,7 @@ Object.defineProperty(exports, 'moon', {
 module.exports = exports;
 
 }).call(this)}).call(this,"/node_modules/numjs/src/images")
-},{"./read":34,"path":52}],31:[function(require,module,exports){
+},{"./read":35,"path":82}],32:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -31625,7 +31939,7 @@ module.exports = function flipImage (img) {
   return new NdArray(img.selection.step(null, -1));
 };
 
-},{"../ndarray":44}],32:[function(require,module,exports){
+},{"../ndarray":45}],33:[function(require,module,exports){
 'use strict';
 
 /**
@@ -31651,7 +31965,7 @@ module.exports = {
   flip: require('./flip')
 };
 
-},{"./area-sum":28,"./area-value":29,"./data":30,"./flip":31,"./read":34,"./resize":35,"./rgb2gray":36,"./sat":37,"./save":38,"./scharr":39,"./sobel":40,"./ssat":41}],33:[function(require,module,exports){
+},{"./area-sum":29,"./area-value":30,"./data":31,"./flip":32,"./read":35,"./resize":36,"./rgb2gray":37,"./sat":38,"./save":39,"./scharr":40,"./sobel":41,"./ssat":42}],34:[function(require,module,exports){
 'use strict';
 
 
@@ -31675,7 +31989,7 @@ module.exports = function isGrayscaleImage (arr) {
   return false;
 };
 
-},{"../ndarray":44,"cwise/lib/wrapper":13}],34:[function(require,module,exports){
+},{"../ndarray":45,"cwise/lib/wrapper":14}],35:[function(require,module,exports){
 'use strict';
 
 /* global HTMLCanvasElement */
@@ -31729,7 +32043,7 @@ function processImg (img) {
   return new NdArray(hxw);
 }
 
-},{"../errors":27,"../ndarray":44,"./is-grayscale":33,"ndarray":24}],35:[function(require,module,exports){
+},{"../errors":28,"../ndarray":45,"./is-grayscale":34,"ndarray":25}],36:[function(require,module,exports){
 'use strict';
 
 var _ = require('./utils');
@@ -31774,7 +32088,7 @@ module.exports = function resizeImageDom (img, height, width) {
   return new NdArray(hxw);
 };
 
-},{"../ndarray":44,"./utils":42,"ndarray":24}],36:[function(require,module,exports){
+},{"../ndarray":45,"./utils":43,"ndarray":25}],37:[function(require,module,exports){
 'use strict';
 
 
@@ -31810,7 +32124,7 @@ module.exports = function rgb2gray (img) {
   return out;
 };
 
-},{"../ndarray":44,"../utils":45,"cwise/lib/wrapper":13}],37:[function(require,module,exports){
+},{"../ndarray":45,"../utils":46,"cwise/lib/wrapper":14}],38:[function(require,module,exports){
 'use strict';
 
 
@@ -31836,7 +32150,7 @@ module.exports = function computeSumAreaTable (img) {
   return out;
 };
 
-},{"../ndarray":44,"./rgb2gray":36,"cwise/lib/wrapper":13}],38:[function(require,module,exports){
+},{"../ndarray":45,"./rgb2gray":37,"cwise/lib/wrapper":14}],39:[function(require,module,exports){
 'use strict';
 
 var _ = require('./utils');
@@ -31869,7 +32183,7 @@ module.exports = function saveImageDom (img, dest) {
   }
 };
 
-},{"../errors":27,"./utils":42}],39:[function(require,module,exports){
+},{"../errors":28,"./utils":43}],40:[function(require,module,exports){
 'use strict';
 
 
@@ -31908,7 +32222,7 @@ module.exports = function computeScharr (img) {
   return out.divide(16 * Math.sqrt(2), false);
 };
 
-},{"../ndarray":44,"../utils":45,"./rgb2gray":36,"cwise/lib/wrapper":13,"ndarray-ops":23}],40:[function(require,module,exports){
+},{"../ndarray":45,"../utils":46,"./rgb2gray":37,"cwise/lib/wrapper":14,"ndarray-ops":24}],41:[function(require,module,exports){
 'use strict';
 
 
@@ -31917,7 +32231,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_34_q=_inline_34_arg2_+2*_inline_34_arg3_+_inline_34_arg4_-_inline_34_arg7_-2*_inline_34_arg8_-_inline_34_arg9_,_inline_34_s=_inline_34_arg2_-_inline_34_arg4_+2*_inline_34_arg5_-2*_inline_34_arg6_+_inline_34_arg7_-_inline_34_arg9_;_inline_34_arg0_=Math.sqrt(_inline_34_s*_inline_34_s+_inline_34_q*_inline_34_q)}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_34_q","_inline_34_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_28_q=_inline_28_arg2_+2*_inline_28_arg3_+_inline_28_arg4_-_inline_28_arg7_-2*_inline_28_arg8_-_inline_28_arg9_,_inline_28_s=_inline_28_arg2_-_inline_28_arg4_+2*_inline_28_arg5_-2*_inline_28_arg6_+_inline_28_arg7_-_inline_28_arg9_;_inline_28_arg0_=Math.sqrt(_inline_28_s*_inline_28_s+_inline_28_q*_inline_28_q)}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_28_q","_inline_28_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
@@ -31949,14 +32263,14 @@ module.exports = function computeSobel (img) {
   return out.divide(4 * Math.sqrt(2), false);
 };
 
-},{"../ndarray":44,"../utils":45,"./rgb2gray":36,"cwise/lib/wrapper":13,"ndarray-ops":23}],41:[function(require,module,exports){
+},{"../ndarray":45,"../utils":46,"./rgb2gray":37,"cwise/lib/wrapper":14,"ndarray-ops":24}],42:[function(require,module,exports){
 'use strict';
 
 
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_28_arg0_=0!==_inline_28_arg2_[0]&&0!==_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_+_inline_28_arg5_-_inline_28_arg3_:0===_inline_28_arg2_[0]&&0===_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_:0===_inline_28_arg2_[0]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg5_:_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_34_arg0_=0!==_inline_34_arg2_[0]&&0!==_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_+_inline_34_arg5_-_inline_34_arg3_:0===_inline_34_arg2_[0]&&0===_inline_34_arg2_[1]?_inline_34_arg1_*_inline_34_arg1_:0===_inline_34_arg2_[0]?_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg5_:_inline_34_arg1_*_inline_34_arg1_+_inline_34_arg4_}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image
@@ -31976,7 +32290,7 @@ module.exports = function computeSquaredSumAreaTable (img) {
   return out;
 };
 
-},{"../ndarray":44,"./rgb2gray":36,"cwise/lib/wrapper":13}],42:[function(require,module,exports){
+},{"../ndarray":45,"./rgb2gray":37,"cwise/lib/wrapper":14}],43:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -32095,7 +32409,7 @@ module.exports.setRawData = function setRawData (array, data) {
   }
 };
 
-},{"../ndarray":44}],43:[function(require,module,exports){
+},{"../ndarray":45}],44:[function(require,module,exports){
 'use strict';
 
 var ndarray = require('ndarray');
@@ -32938,7 +33252,7 @@ module.exports = {
   images: require('./images')
 };
 
-},{"./config":25,"./dtypes":26,"./errors":27,"./images":32,"./ndarray":44,"./utils":45,"cwise/lib/wrapper":13,"ndarray":24,"ndarray-fft":19,"ndarray-ops":23}],44:[function(require,module,exports){
+},{"./config":26,"./dtypes":27,"./errors":28,"./images":33,"./ndarray":45,"./utils":46,"cwise/lib/wrapper":14,"ndarray":25,"ndarray-fft":20,"ndarray-ops":24}],45:[function(require,module,exports){
 'use strict';
 
 var ndarray = require('ndarray');
@@ -34004,7 +34318,7 @@ function formatNumber (v) {
   return String(Number((v || 0).toFixed(CONF.nFloatingValues)));
 }
 
-},{"./config":25,"./errors":27,"./utils":45,"cwise/lib/wrapper":13,"ndarray":24,"ndarray-fft":19,"ndarray-gemm":21,"ndarray-ops":23,"typedarray-pool":46}],45:[function(require,module,exports){
+},{"./config":26,"./errors":28,"./utils":46,"cwise/lib/wrapper":14,"ndarray":25,"ndarray-fft":20,"ndarray-gemm":22,"ndarray-ops":24,"typedarray-pool":47}],46:[function(require,module,exports){
 'use strict';
 var DTYPES = require('./dtypes');
 var _ = require('lodash');
@@ -34097,7 +34411,7 @@ module.exports = {
   defaults: _.defaults
 };
 
-},{"./dtypes":26,"lodash":18}],46:[function(require,module,exports){
+},{"./dtypes":27,"lodash":19}],47:[function(require,module,exports){
 (function (global){(function (){
 'use strict'
 
@@ -34352,7 +34666,7 @@ exports.clearCache = function clearCache() {
 }
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"bit-twiddle":9,"buffer":50,"dup":14}],47:[function(require,module,exports){
+},{"bit-twiddle":10,"buffer":55,"dup":15}],48:[function(require,module,exports){
 (function (global){(function (){
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
@@ -36403,7 +36717,7 @@ exports.clearCache = function clearCache() {
 
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],48:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -36462,7 +36776,1139 @@ function unique(list, compare, sorted) {
 
 module.exports = unique
 
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
+(function (global){(function (){
+'use strict';
+
+var objectAssign = require('object.assign/polyfill')();
+
+// compare and isBuffer taken from https://github.com/feross/buffer/blob/680e9e5e488f22aac27599a57dc844a6315928dd/index.js
+// original notice:
+
+/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
+ * @license  MIT
+ */
+function compare(a, b) {
+  if (a === b) {
+    return 0;
+  }
+
+  var x = a.length;
+  var y = b.length;
+
+  for (var i = 0, len = Math.min(x, y); i < len; ++i) {
+    if (a[i] !== b[i]) {
+      x = a[i];
+      y = b[i];
+      break;
+    }
+  }
+
+  if (x < y) {
+    return -1;
+  }
+  if (y < x) {
+    return 1;
+  }
+  return 0;
+}
+function isBuffer(b) {
+  if (global.Buffer && typeof global.Buffer.isBuffer === 'function') {
+    return global.Buffer.isBuffer(b);
+  }
+  return !!(b != null && b._isBuffer);
+}
+
+// based on node assert, original notice:
+// NB: The URL to the CommonJS spec is kept just for tradition.
+//     node-assert has evolved a lot since then, both in API and behavior.
+
+// http://wiki.commonjs.org/wiki/Unit_Testing/1.0
+//
+// THIS IS NOT TESTED NOR LIKELY TO WORK OUTSIDE V8!
+//
+// Originally from narwhal.js (http://narwhaljs.org)
+// Copyright (c) 2009 Thomas Robinson <280north.com>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the 'Software'), to
+// deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+// sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+// ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+var util = require('util/');
+var hasOwn = Object.prototype.hasOwnProperty;
+var pSlice = Array.prototype.slice;
+var functionsHaveNames = (function () {
+  return function foo() {}.name === 'foo';
+}());
+function pToString (obj) {
+  return Object.prototype.toString.call(obj);
+}
+function isView(arrbuf) {
+  if (isBuffer(arrbuf)) {
+    return false;
+  }
+  if (typeof global.ArrayBuffer !== 'function') {
+    return false;
+  }
+  if (typeof ArrayBuffer.isView === 'function') {
+    return ArrayBuffer.isView(arrbuf);
+  }
+  if (!arrbuf) {
+    return false;
+  }
+  if (arrbuf instanceof DataView) {
+    return true;
+  }
+  if (arrbuf.buffer && arrbuf.buffer instanceof ArrayBuffer) {
+    return true;
+  }
+  return false;
+}
+// 1. The assert module provides functions that throw
+// AssertionError's when particular conditions are not met. The
+// assert module must conform to the following interface.
+
+var assert = module.exports = ok;
+
+// 2. The AssertionError is defined in assert.
+// new assert.AssertionError({ message: message,
+//                             actual: actual,
+//                             expected: expected })
+
+var regex = /\s*function\s+([^\(\s]*)\s*/;
+// based on https://github.com/ljharb/function.prototype.name/blob/adeeeec8bfcc6068b187d7d9fb3d5bb1d3a30899/implementation.js
+function getName(func) {
+  if (!util.isFunction(func)) {
+    return;
+  }
+  if (functionsHaveNames) {
+    return func.name;
+  }
+  var str = func.toString();
+  var match = str.match(regex);
+  return match && match[1];
+}
+assert.AssertionError = function AssertionError(options) {
+  this.name = 'AssertionError';
+  this.actual = options.actual;
+  this.expected = options.expected;
+  this.operator = options.operator;
+  if (options.message) {
+    this.message = options.message;
+    this.generatedMessage = false;
+  } else {
+    this.message = getMessage(this);
+    this.generatedMessage = true;
+  }
+  var stackStartFunction = options.stackStartFunction || fail;
+  if (Error.captureStackTrace) {
+    Error.captureStackTrace(this, stackStartFunction);
+  } else {
+    // non v8 browsers so we can have a stacktrace
+    var err = new Error();
+    if (err.stack) {
+      var out = err.stack;
+
+      // try to strip useless frames
+      var fn_name = getName(stackStartFunction);
+      var idx = out.indexOf('\n' + fn_name);
+      if (idx >= 0) {
+        // once we have located the function frame
+        // we need to strip out everything before it (and its line)
+        var next_line = out.indexOf('\n', idx + 1);
+        out = out.substring(next_line + 1);
+      }
+
+      this.stack = out;
+    }
+  }
+};
+
+// assert.AssertionError instanceof Error
+util.inherits(assert.AssertionError, Error);
+
+function truncate(s, n) {
+  if (typeof s === 'string') {
+    return s.length < n ? s : s.slice(0, n);
+  } else {
+    return s;
+  }
+}
+function inspect(something) {
+  if (functionsHaveNames || !util.isFunction(something)) {
+    return util.inspect(something);
+  }
+  var rawname = getName(something);
+  var name = rawname ? ': ' + rawname : '';
+  return '[Function' +  name + ']';
+}
+function getMessage(self) {
+  return truncate(inspect(self.actual), 128) + ' ' +
+         self.operator + ' ' +
+         truncate(inspect(self.expected), 128);
+}
+
+// At present only the three keys mentioned above are used and
+// understood by the spec. Implementations or sub modules can pass
+// other keys to the AssertionError's constructor - they will be
+// ignored.
+
+// 3. All of the following functions must throw an AssertionError
+// when a corresponding condition is not met, with a message that
+// may be undefined if not provided.  All assertion methods provide
+// both the actual and expected values to the assertion error for
+// display purposes.
+
+function fail(actual, expected, message, operator, stackStartFunction) {
+  throw new assert.AssertionError({
+    message: message,
+    actual: actual,
+    expected: expected,
+    operator: operator,
+    stackStartFunction: stackStartFunction
+  });
+}
+
+// EXTENSION! allows for well behaved errors defined elsewhere.
+assert.fail = fail;
+
+// 4. Pure assertion tests whether a value is truthy, as determined
+// by !!guard.
+// assert.ok(guard, message_opt);
+// This statement is equivalent to assert.equal(true, !!guard,
+// message_opt);. To test strictly for the value true, use
+// assert.strictEqual(true, guard, message_opt);.
+
+function ok(value, message) {
+  if (!value) fail(value, true, message, '==', assert.ok);
+}
+assert.ok = ok;
+
+// 5. The equality assertion tests shallow, coercive equality with
+// ==.
+// assert.equal(actual, expected, message_opt);
+
+assert.equal = function equal(actual, expected, message) {
+  if (actual != expected) fail(actual, expected, message, '==', assert.equal);
+};
+
+// 6. The non-equality assertion tests for whether two objects are not equal
+// with != assert.notEqual(actual, expected, message_opt);
+
+assert.notEqual = function notEqual(actual, expected, message) {
+  if (actual == expected) {
+    fail(actual, expected, message, '!=', assert.notEqual);
+  }
+};
+
+// 7. The equivalence assertion tests a deep equality relation.
+// assert.deepEqual(actual, expected, message_opt);
+
+assert.deepEqual = function deepEqual(actual, expected, message) {
+  if (!_deepEqual(actual, expected, false)) {
+    fail(actual, expected, message, 'deepEqual', assert.deepEqual);
+  }
+};
+
+assert.deepStrictEqual = function deepStrictEqual(actual, expected, message) {
+  if (!_deepEqual(actual, expected, true)) {
+    fail(actual, expected, message, 'deepStrictEqual', assert.deepStrictEqual);
+  }
+};
+
+function _deepEqual(actual, expected, strict, memos) {
+  // 7.1. All identical values are equivalent, as determined by ===.
+  if (actual === expected) {
+    return true;
+  } else if (isBuffer(actual) && isBuffer(expected)) {
+    return compare(actual, expected) === 0;
+
+  // 7.2. If the expected value is a Date object, the actual value is
+  // equivalent if it is also a Date object that refers to the same time.
+  } else if (util.isDate(actual) && util.isDate(expected)) {
+    return actual.getTime() === expected.getTime();
+
+  // 7.3 If the expected value is a RegExp object, the actual value is
+  // equivalent if it is also a RegExp object with the same source and
+  // properties (`global`, `multiline`, `lastIndex`, `ignoreCase`).
+  } else if (util.isRegExp(actual) && util.isRegExp(expected)) {
+    return actual.source === expected.source &&
+           actual.global === expected.global &&
+           actual.multiline === expected.multiline &&
+           actual.lastIndex === expected.lastIndex &&
+           actual.ignoreCase === expected.ignoreCase;
+
+  // 7.4. Other pairs that do not both pass typeof value == 'object',
+  // equivalence is determined by ==.
+  } else if ((actual === null || typeof actual !== 'object') &&
+             (expected === null || typeof expected !== 'object')) {
+    return strict ? actual === expected : actual == expected;
+
+  // If both values are instances of typed arrays, wrap their underlying
+  // ArrayBuffers in a Buffer each to increase performance
+  // This optimization requires the arrays to have the same type as checked by
+  // Object.prototype.toString (aka pToString). Never perform binary
+  // comparisons for Float*Arrays, though, since e.g. +0 === -0 but their
+  // bit patterns are not identical.
+  } else if (isView(actual) && isView(expected) &&
+             pToString(actual) === pToString(expected) &&
+             !(actual instanceof Float32Array ||
+               actual instanceof Float64Array)) {
+    return compare(new Uint8Array(actual.buffer),
+                   new Uint8Array(expected.buffer)) === 0;
+
+  // 7.5 For all other Object pairs, including Array objects, equivalence is
+  // determined by having the same number of owned properties (as verified
+  // with Object.prototype.hasOwnProperty.call), the same set of keys
+  // (although not necessarily the same order), equivalent values for every
+  // corresponding key, and an identical 'prototype' property. Note: this
+  // accounts for both named and indexed properties on Arrays.
+  } else if (isBuffer(actual) !== isBuffer(expected)) {
+    return false;
+  } else {
+    memos = memos || {actual: [], expected: []};
+
+    var actualIndex = memos.actual.indexOf(actual);
+    if (actualIndex !== -1) {
+      if (actualIndex === memos.expected.indexOf(expected)) {
+        return true;
+      }
+    }
+
+    memos.actual.push(actual);
+    memos.expected.push(expected);
+
+    return objEquiv(actual, expected, strict, memos);
+  }
+}
+
+function isArguments(object) {
+  return Object.prototype.toString.call(object) == '[object Arguments]';
+}
+
+function objEquiv(a, b, strict, actualVisitedObjects) {
+  if (a === null || a === undefined || b === null || b === undefined)
+    return false;
+  // if one is a primitive, the other must be same
+  if (util.isPrimitive(a) || util.isPrimitive(b))
+    return a === b;
+  if (strict && Object.getPrototypeOf(a) !== Object.getPrototypeOf(b))
+    return false;
+  var aIsArgs = isArguments(a);
+  var bIsArgs = isArguments(b);
+  if ((aIsArgs && !bIsArgs) || (!aIsArgs && bIsArgs))
+    return false;
+  if (aIsArgs) {
+    a = pSlice.call(a);
+    b = pSlice.call(b);
+    return _deepEqual(a, b, strict);
+  }
+  var ka = objectKeys(a);
+  var kb = objectKeys(b);
+  var key, i;
+  // having the same number of owned properties (keys incorporates
+  // hasOwnProperty)
+  if (ka.length !== kb.length)
+    return false;
+  //the same set of keys (although not necessarily the same order),
+  ka.sort();
+  kb.sort();
+  //~~~cheap key test
+  for (i = ka.length - 1; i >= 0; i--) {
+    if (ka[i] !== kb[i])
+      return false;
+  }
+  //equivalent values for every corresponding key, and
+  //~~~possibly expensive deep test
+  for (i = ka.length - 1; i >= 0; i--) {
+    key = ka[i];
+    if (!_deepEqual(a[key], b[key], strict, actualVisitedObjects))
+      return false;
+  }
+  return true;
+}
+
+// 8. The non-equivalence assertion tests for any deep inequality.
+// assert.notDeepEqual(actual, expected, message_opt);
+
+assert.notDeepEqual = function notDeepEqual(actual, expected, message) {
+  if (_deepEqual(actual, expected, false)) {
+    fail(actual, expected, message, 'notDeepEqual', assert.notDeepEqual);
+  }
+};
+
+assert.notDeepStrictEqual = notDeepStrictEqual;
+function notDeepStrictEqual(actual, expected, message) {
+  if (_deepEqual(actual, expected, true)) {
+    fail(actual, expected, message, 'notDeepStrictEqual', notDeepStrictEqual);
+  }
+}
+
+
+// 9. The strict equality assertion tests strict equality, as determined by ===.
+// assert.strictEqual(actual, expected, message_opt);
+
+assert.strictEqual = function strictEqual(actual, expected, message) {
+  if (actual !== expected) {
+    fail(actual, expected, message, '===', assert.strictEqual);
+  }
+};
+
+// 10. The strict non-equality assertion tests for strict inequality, as
+// determined by !==.  assert.notStrictEqual(actual, expected, message_opt);
+
+assert.notStrictEqual = function notStrictEqual(actual, expected, message) {
+  if (actual === expected) {
+    fail(actual, expected, message, '!==', assert.notStrictEqual);
+  }
+};
+
+function expectedException(actual, expected) {
+  if (!actual || !expected) {
+    return false;
+  }
+
+  if (Object.prototype.toString.call(expected) == '[object RegExp]') {
+    return expected.test(actual);
+  }
+
+  try {
+    if (actual instanceof expected) {
+      return true;
+    }
+  } catch (e) {
+    // Ignore.  The instanceof check doesn't work for arrow functions.
+  }
+
+  if (Error.isPrototypeOf(expected)) {
+    return false;
+  }
+
+  return expected.call({}, actual) === true;
+}
+
+function _tryBlock(block) {
+  var error;
+  try {
+    block();
+  } catch (e) {
+    error = e;
+  }
+  return error;
+}
+
+function _throws(shouldThrow, block, expected, message) {
+  var actual;
+
+  if (typeof block !== 'function') {
+    throw new TypeError('"block" argument must be a function');
+  }
+
+  if (typeof expected === 'string') {
+    message = expected;
+    expected = null;
+  }
+
+  actual = _tryBlock(block);
+
+  message = (expected && expected.name ? ' (' + expected.name + ').' : '.') +
+            (message ? ' ' + message : '.');
+
+  if (shouldThrow && !actual) {
+    fail(actual, expected, 'Missing expected exception' + message);
+  }
+
+  var userProvidedMessage = typeof message === 'string';
+  var isUnwantedException = !shouldThrow && util.isError(actual);
+  var isUnexpectedException = !shouldThrow && actual && !expected;
+
+  if ((isUnwantedException &&
+      userProvidedMessage &&
+      expectedException(actual, expected)) ||
+      isUnexpectedException) {
+    fail(actual, expected, 'Got unwanted exception' + message);
+  }
+
+  if ((shouldThrow && actual && expected &&
+      !expectedException(actual, expected)) || (!shouldThrow && actual)) {
+    throw actual;
+  }
+}
+
+// 11. Expected to throw an error:
+// assert.throws(block, Error_opt, message_opt);
+
+assert.throws = function(block, /*optional*/error, /*optional*/message) {
+  _throws(true, block, error, message);
+};
+
+// EXTENSION! This is annoying to write outside this module.
+assert.doesNotThrow = function(block, /*optional*/error, /*optional*/message) {
+  _throws(false, block, error, message);
+};
+
+assert.ifError = function(err) { if (err) throw err; };
+
+// Expose a strict only variant of assert
+function strict(value, message) {
+  if (!value) fail(value, true, message, '==', strict);
+}
+assert.strict = objectAssign(strict, assert, {
+  equal: assert.strictEqual,
+  deepEqual: assert.deepStrictEqual,
+  notEqual: assert.notStrictEqual,
+  notDeepEqual: assert.notDeepStrictEqual
+});
+assert.strict.strict = assert.strict;
+
+var objectKeys = Object.keys || function (obj) {
+  var keys = [];
+  for (var key in obj) {
+    if (hasOwn.call(obj, key)) keys.push(key);
+  }
+  return keys;
+};
+
+}).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"object.assign/polyfill":81,"util/":53}],51:[function(require,module,exports){
+if (typeof Object.create === 'function') {
+  // implementation from standard node.js 'util' module
+  module.exports = function inherits(ctor, superCtor) {
+    ctor.super_ = superCtor
+    ctor.prototype = Object.create(superCtor.prototype, {
+      constructor: {
+        value: ctor,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      }
+    });
+  };
+} else {
+  // old school shim for old browsers
+  module.exports = function inherits(ctor, superCtor) {
+    ctor.super_ = superCtor
+    var TempCtor = function () {}
+    TempCtor.prototype = superCtor.prototype
+    ctor.prototype = new TempCtor()
+    ctor.prototype.constructor = ctor
+  }
+}
+
+},{}],52:[function(require,module,exports){
+module.exports = function isBuffer(arg) {
+  return arg && typeof arg === 'object'
+    && typeof arg.copy === 'function'
+    && typeof arg.fill === 'function'
+    && typeof arg.readUInt8 === 'function';
+}
+},{}],53:[function(require,module,exports){
+(function (process,global){(function (){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+var formatRegExp = /%[sdj%]/g;
+exports.format = function(f) {
+  if (!isString(f)) {
+    var objects = [];
+    for (var i = 0; i < arguments.length; i++) {
+      objects.push(inspect(arguments[i]));
+    }
+    return objects.join(' ');
+  }
+
+  var i = 1;
+  var args = arguments;
+  var len = args.length;
+  var str = String(f).replace(formatRegExp, function(x) {
+    if (x === '%%') return '%';
+    if (i >= len) return x;
+    switch (x) {
+      case '%s': return String(args[i++]);
+      case '%d': return Number(args[i++]);
+      case '%j':
+        try {
+          return JSON.stringify(args[i++]);
+        } catch (_) {
+          return '[Circular]';
+        }
+      default:
+        return x;
+    }
+  });
+  for (var x = args[i]; i < len; x = args[++i]) {
+    if (isNull(x) || !isObject(x)) {
+      str += ' ' + x;
+    } else {
+      str += ' ' + inspect(x);
+    }
+  }
+  return str;
+};
+
+
+// Mark that a method should not be used.
+// Returns a modified function which warns once by default.
+// If --no-deprecation is set, then it is a no-op.
+exports.deprecate = function(fn, msg) {
+  // Allow for deprecating things in the process of starting up.
+  if (isUndefined(global.process)) {
+    return function() {
+      return exports.deprecate(fn, msg).apply(this, arguments);
+    };
+  }
+
+  if (process.noDeprecation === true) {
+    return fn;
+  }
+
+  var warned = false;
+  function deprecated() {
+    if (!warned) {
+      if (process.throwDeprecation) {
+        throw new Error(msg);
+      } else if (process.traceDeprecation) {
+        console.trace(msg);
+      } else {
+        console.error(msg);
+      }
+      warned = true;
+    }
+    return fn.apply(this, arguments);
+  }
+
+  return deprecated;
+};
+
+
+var debugs = {};
+var debugEnviron;
+exports.debuglog = function(set) {
+  if (isUndefined(debugEnviron))
+    debugEnviron = process.env.NODE_DEBUG || '';
+  set = set.toUpperCase();
+  if (!debugs[set]) {
+    if (new RegExp('\\b' + set + '\\b', 'i').test(debugEnviron)) {
+      var pid = process.pid;
+      debugs[set] = function() {
+        var msg = exports.format.apply(exports, arguments);
+        console.error('%s %d: %s', set, pid, msg);
+      };
+    } else {
+      debugs[set] = function() {};
+    }
+  }
+  return debugs[set];
+};
+
+
+/**
+ * Echos the value of a value. Trys to print the value out
+ * in the best way possible given the different types.
+ *
+ * @param {Object} obj The object to print out.
+ * @param {Object} opts Optional options object that alters the output.
+ */
+/* legacy: obj, showHidden, depth, colors*/
+function inspect(obj, opts) {
+  // default options
+  var ctx = {
+    seen: [],
+    stylize: stylizeNoColor
+  };
+  // legacy...
+  if (arguments.length >= 3) ctx.depth = arguments[2];
+  if (arguments.length >= 4) ctx.colors = arguments[3];
+  if (isBoolean(opts)) {
+    // legacy...
+    ctx.showHidden = opts;
+  } else if (opts) {
+    // got an "options" object
+    exports._extend(ctx, opts);
+  }
+  // set default options
+  if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
+  if (isUndefined(ctx.depth)) ctx.depth = 2;
+  if (isUndefined(ctx.colors)) ctx.colors = false;
+  if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
+  if (ctx.colors) ctx.stylize = stylizeWithColor;
+  return formatValue(ctx, obj, ctx.depth);
+}
+exports.inspect = inspect;
+
+
+// http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
+inspect.colors = {
+  'bold' : [1, 22],
+  'italic' : [3, 23],
+  'underline' : [4, 24],
+  'inverse' : [7, 27],
+  'white' : [37, 39],
+  'grey' : [90, 39],
+  'black' : [30, 39],
+  'blue' : [34, 39],
+  'cyan' : [36, 39],
+  'green' : [32, 39],
+  'magenta' : [35, 39],
+  'red' : [31, 39],
+  'yellow' : [33, 39]
+};
+
+// Don't use 'blue' not visible on cmd.exe
+inspect.styles = {
+  'special': 'cyan',
+  'number': 'yellow',
+  'boolean': 'yellow',
+  'undefined': 'grey',
+  'null': 'bold',
+  'string': 'green',
+  'date': 'magenta',
+  // "name": intentionally not styling
+  'regexp': 'red'
+};
+
+
+function stylizeWithColor(str, styleType) {
+  var style = inspect.styles[styleType];
+
+  if (style) {
+    return '\u001b[' + inspect.colors[style][0] + 'm' + str +
+           '\u001b[' + inspect.colors[style][1] + 'm';
+  } else {
+    return str;
+  }
+}
+
+
+function stylizeNoColor(str, styleType) {
+  return str;
+}
+
+
+function arrayToHash(array) {
+  var hash = {};
+
+  array.forEach(function(val, idx) {
+    hash[val] = true;
+  });
+
+  return hash;
+}
+
+
+function formatValue(ctx, value, recurseTimes) {
+  // Provide a hook for user-specified inspect functions.
+  // Check that value is an object with an inspect function on it
+  if (ctx.customInspect &&
+      value &&
+      isFunction(value.inspect) &&
+      // Filter out the util module, it's inspect function is special
+      value.inspect !== exports.inspect &&
+      // Also filter out any prototype objects using the circular check.
+      !(value.constructor && value.constructor.prototype === value)) {
+    var ret = value.inspect(recurseTimes, ctx);
+    if (!isString(ret)) {
+      ret = formatValue(ctx, ret, recurseTimes);
+    }
+    return ret;
+  }
+
+  // Primitive types cannot have properties
+  var primitive = formatPrimitive(ctx, value);
+  if (primitive) {
+    return primitive;
+  }
+
+  // Look up the keys of the object.
+  var keys = Object.keys(value);
+  var visibleKeys = arrayToHash(keys);
+
+  if (ctx.showHidden) {
+    keys = Object.getOwnPropertyNames(value);
+  }
+
+  // IE doesn't make error fields non-enumerable
+  // http://msdn.microsoft.com/en-us/library/ie/dww52sbt(v=vs.94).aspx
+  if (isError(value)
+      && (keys.indexOf('message') >= 0 || keys.indexOf('description') >= 0)) {
+    return formatError(value);
+  }
+
+  // Some type of object without properties can be shortcutted.
+  if (keys.length === 0) {
+    if (isFunction(value)) {
+      var name = value.name ? ': ' + value.name : '';
+      return ctx.stylize('[Function' + name + ']', 'special');
+    }
+    if (isRegExp(value)) {
+      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
+    }
+    if (isDate(value)) {
+      return ctx.stylize(Date.prototype.toString.call(value), 'date');
+    }
+    if (isError(value)) {
+      return formatError(value);
+    }
+  }
+
+  var base = '', array = false, braces = ['{', '}'];
+
+  // Make Array say that they are Array
+  if (isArray(value)) {
+    array = true;
+    braces = ['[', ']'];
+  }
+
+  // Make functions say that they are functions
+  if (isFunction(value)) {
+    var n = value.name ? ': ' + value.name : '';
+    base = ' [Function' + n + ']';
+  }
+
+  // Make RegExps say that they are RegExps
+  if (isRegExp(value)) {
+    base = ' ' + RegExp.prototype.toString.call(value);
+  }
+
+  // Make dates with properties first say the date
+  if (isDate(value)) {
+    base = ' ' + Date.prototype.toUTCString.call(value);
+  }
+
+  // Make error with message first say the error
+  if (isError(value)) {
+    base = ' ' + formatError(value);
+  }
+
+  if (keys.length === 0 && (!array || value.length == 0)) {
+    return braces[0] + base + braces[1];
+  }
+
+  if (recurseTimes < 0) {
+    if (isRegExp(value)) {
+      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
+    } else {
+      return ctx.stylize('[Object]', 'special');
+    }
+  }
+
+  ctx.seen.push(value);
+
+  var output;
+  if (array) {
+    output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
+  } else {
+    output = keys.map(function(key) {
+      return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
+    });
+  }
+
+  ctx.seen.pop();
+
+  return reduceToSingleString(output, base, braces);
+}
+
+
+function formatPrimitive(ctx, value) {
+  if (isUndefined(value))
+    return ctx.stylize('undefined', 'undefined');
+  if (isString(value)) {
+    var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
+                                             .replace(/'/g, "\\'")
+                                             .replace(/\\"/g, '"') + '\'';
+    return ctx.stylize(simple, 'string');
+  }
+  if (isNumber(value))
+    return ctx.stylize('' + value, 'number');
+  if (isBoolean(value))
+    return ctx.stylize('' + value, 'boolean');
+  // For some reason typeof null is "object", so special case here.
+  if (isNull(value))
+    return ctx.stylize('null', 'null');
+}
+
+
+function formatError(value) {
+  return '[' + Error.prototype.toString.call(value) + ']';
+}
+
+
+function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
+  var output = [];
+  for (var i = 0, l = value.length; i < l; ++i) {
+    if (hasOwnProperty(value, String(i))) {
+      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
+          String(i), true));
+    } else {
+      output.push('');
+    }
+  }
+  keys.forEach(function(key) {
+    if (!key.match(/^\d+$/)) {
+      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
+          key, true));
+    }
+  });
+  return output;
+}
+
+
+function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
+  var name, str, desc;
+  desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
+  if (desc.get) {
+    if (desc.set) {
+      str = ctx.stylize('[Getter/Setter]', 'special');
+    } else {
+      str = ctx.stylize('[Getter]', 'special');
+    }
+  } else {
+    if (desc.set) {
+      str = ctx.stylize('[Setter]', 'special');
+    }
+  }
+  if (!hasOwnProperty(visibleKeys, key)) {
+    name = '[' + key + ']';
+  }
+  if (!str) {
+    if (ctx.seen.indexOf(desc.value) < 0) {
+      if (isNull(recurseTimes)) {
+        str = formatValue(ctx, desc.value, null);
+      } else {
+        str = formatValue(ctx, desc.value, recurseTimes - 1);
+      }
+      if (str.indexOf('\n') > -1) {
+        if (array) {
+          str = str.split('\n').map(function(line) {
+            return '  ' + line;
+          }).join('\n').substr(2);
+        } else {
+          str = '\n' + str.split('\n').map(function(line) {
+            return '   ' + line;
+          }).join('\n');
+        }
+      }
+    } else {
+      str = ctx.stylize('[Circular]', 'special');
+    }
+  }
+  if (isUndefined(name)) {
+    if (array && key.match(/^\d+$/)) {
+      return str;
+    }
+    name = JSON.stringify('' + key);
+    if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
+      name = name.substr(1, name.length - 2);
+      name = ctx.stylize(name, 'name');
+    } else {
+      name = name.replace(/'/g, "\\'")
+                 .replace(/\\"/g, '"')
+                 .replace(/(^"|"$)/g, "'");
+      name = ctx.stylize(name, 'string');
+    }
+  }
+
+  return name + ': ' + str;
+}
+
+
+function reduceToSingleString(output, base, braces) {
+  var numLinesEst = 0;
+  var length = output.reduce(function(prev, cur) {
+    numLinesEst++;
+    if (cur.indexOf('\n') >= 0) numLinesEst++;
+    return prev + cur.replace(/\u001b\[\d\d?m/g, '').length + 1;
+  }, 0);
+
+  if (length > 60) {
+    return braces[0] +
+           (base === '' ? '' : base + '\n ') +
+           ' ' +
+           output.join(',\n  ') +
+           ' ' +
+           braces[1];
+  }
+
+  return braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
+}
+
+
+// NOTE: These type checking functions intentionally don't use `instanceof`
+// because it is fragile and can be easily faked with `Object.create()`.
+function isArray(ar) {
+  return Array.isArray(ar);
+}
+exports.isArray = isArray;
+
+function isBoolean(arg) {
+  return typeof arg === 'boolean';
+}
+exports.isBoolean = isBoolean;
+
+function isNull(arg) {
+  return arg === null;
+}
+exports.isNull = isNull;
+
+function isNullOrUndefined(arg) {
+  return arg == null;
+}
+exports.isNullOrUndefined = isNullOrUndefined;
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+exports.isNumber = isNumber;
+
+function isString(arg) {
+  return typeof arg === 'string';
+}
+exports.isString = isString;
+
+function isSymbol(arg) {
+  return typeof arg === 'symbol';
+}
+exports.isSymbol = isSymbol;
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+exports.isUndefined = isUndefined;
+
+function isRegExp(re) {
+  return isObject(re) && objectToString(re) === '[object RegExp]';
+}
+exports.isRegExp = isRegExp;
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+exports.isObject = isObject;
+
+function isDate(d) {
+  return isObject(d) && objectToString(d) === '[object Date]';
+}
+exports.isDate = isDate;
+
+function isError(e) {
+  return isObject(e) &&
+      (objectToString(e) === '[object Error]' || e instanceof Error);
+}
+exports.isError = isError;
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+exports.isFunction = isFunction;
+
+function isPrimitive(arg) {
+  return arg === null ||
+         typeof arg === 'boolean' ||
+         typeof arg === 'number' ||
+         typeof arg === 'string' ||
+         typeof arg === 'symbol' ||  // ES6 symbol
+         typeof arg === 'undefined';
+}
+exports.isPrimitive = isPrimitive;
+
+exports.isBuffer = require('./support/isBuffer');
+
+function objectToString(o) {
+  return Object.prototype.toString.call(o);
+}
+
+
+function pad(n) {
+  return n < 10 ? '0' + n.toString(10) : n.toString(10);
+}
+
+
+var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
+              'Oct', 'Nov', 'Dec'];
+
+// 26 Feb 16:19:34
+function timestamp() {
+  var d = new Date();
+  var time = [pad(d.getHours()),
+              pad(d.getMinutes()),
+              pad(d.getSeconds())].join(':');
+  return [d.getDate(), months[d.getMonth()], time].join(' ');
+}
+
+
+// log is just a thin wrapper to console.log that prepends a timestamp
+exports.log = function() {
+  console.log('%s - %s', timestamp(), exports.format.apply(exports, arguments));
+};
+
+
+/**
+ * Inherit the prototype methods from one constructor into another.
+ *
+ * The Function.prototype.inherits from lang.js rewritten as a standalone
+ * function (not on Function.prototype). NOTE: If this file is to be loaded
+ * during bootstrapping this function needs to be rewritten using some native
+ * functions as prototype setup using normal JavaScript does not work as
+ * expected during bootstrapping (see mirror.js in r114903).
+ *
+ * @param {function} ctor Constructor function which needs to inherit the
+ *     prototype.
+ * @param {function} superCtor Constructor function to inherit prototype from.
+ */
+exports.inherits = require('inherits');
+
+exports._extend = function(origin, add) {
+  // Don't do anything if add isn't an object
+  if (!add || !isObject(add)) return origin;
+
+  var keys = Object.keys(add);
+  var i = keys.length;
+  while (i--) {
+    origin[keys[i]] = add[keys[i]];
+  }
+  return origin;
+};
+
+function hasOwnProperty(obj, prop) {
+  return Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
+}).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"./support/isBuffer":52,"_process":83,"inherits":51}],54:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -36614,7 +38060,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],50:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -38395,7 +39841,761 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":49,"buffer":50,"ieee754":51}],51:[function(require,module,exports){
+},{"base64-js":54,"buffer":55,"ieee754":76}],56:[function(require,module,exports){
+'use strict';
+
+var GetIntrinsic = require('get-intrinsic');
+
+var callBind = require('./');
+
+var $indexOf = callBind(GetIntrinsic('String.prototype.indexOf'));
+
+module.exports = function callBoundIntrinsic(name, allowMissing) {
+	var intrinsic = GetIntrinsic(name, !!allowMissing);
+	if (typeof intrinsic === 'function' && $indexOf(name, '.prototype.') > -1) {
+		return callBind(intrinsic);
+	}
+	return intrinsic;
+};
+
+},{"./":57,"get-intrinsic":69}],57:[function(require,module,exports){
+'use strict';
+
+var bind = require('function-bind');
+var GetIntrinsic = require('get-intrinsic');
+var setFunctionLength = require('set-function-length');
+
+var $TypeError = require('es-errors/type');
+var $apply = GetIntrinsic('%Function.prototype.apply%');
+var $call = GetIntrinsic('%Function.prototype.call%');
+var $reflectApply = GetIntrinsic('%Reflect.apply%', true) || bind.call($call, $apply);
+
+var $defineProperty = require('es-define-property');
+var $max = GetIntrinsic('%Math.max%');
+
+module.exports = function callBind(originalFunction) {
+	if (typeof originalFunction !== 'function') {
+		throw new $TypeError('a function is required');
+	}
+	var func = $reflectApply(bind, $call, arguments);
+	return setFunctionLength(
+		func,
+		1 + $max(0, originalFunction.length - (arguments.length - 1)),
+		true
+	);
+};
+
+var applyBind = function applyBind() {
+	return $reflectApply(bind, $apply, arguments);
+};
+
+if ($defineProperty) {
+	$defineProperty(module.exports, 'apply', { value: applyBind });
+} else {
+	module.exports.apply = applyBind;
+}
+
+},{"es-define-property":59,"es-errors/type":65,"function-bind":68,"get-intrinsic":69,"set-function-length":84}],58:[function(require,module,exports){
+'use strict';
+
+var $defineProperty = require('es-define-property');
+
+var $SyntaxError = require('es-errors/syntax');
+var $TypeError = require('es-errors/type');
+
+var gopd = require('gopd');
+
+/** @type {import('.')} */
+module.exports = function defineDataProperty(
+	obj,
+	property,
+	value
+) {
+	if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) {
+		throw new $TypeError('`obj` must be an object or a function`');
+	}
+	if (typeof property !== 'string' && typeof property !== 'symbol') {
+		throw new $TypeError('`property` must be a string or a symbol`');
+	}
+	if (arguments.length > 3 && typeof arguments[3] !== 'boolean' && arguments[3] !== null) {
+		throw new $TypeError('`nonEnumerable`, if provided, must be a boolean or null');
+	}
+	if (arguments.length > 4 && typeof arguments[4] !== 'boolean' && arguments[4] !== null) {
+		throw new $TypeError('`nonWritable`, if provided, must be a boolean or null');
+	}
+	if (arguments.length > 5 && typeof arguments[5] !== 'boolean' && arguments[5] !== null) {
+		throw new $TypeError('`nonConfigurable`, if provided, must be a boolean or null');
+	}
+	if (arguments.length > 6 && typeof arguments[6] !== 'boolean') {
+		throw new $TypeError('`loose`, if provided, must be a boolean');
+	}
+
+	var nonEnumerable = arguments.length > 3 ? arguments[3] : null;
+	var nonWritable = arguments.length > 4 ? arguments[4] : null;
+	var nonConfigurable = arguments.length > 5 ? arguments[5] : null;
+	var loose = arguments.length > 6 ? arguments[6] : false;
+
+	/* @type {false | TypedPropertyDescriptor<unknown>} */
+	var desc = !!gopd && gopd(obj, property);
+
+	if ($defineProperty) {
+		$defineProperty(obj, property, {
+			configurable: nonConfigurable === null && desc ? desc.configurable : !nonConfigurable,
+			enumerable: nonEnumerable === null && desc ? desc.enumerable : !nonEnumerable,
+			value: value,
+			writable: nonWritable === null && desc ? desc.writable : !nonWritable
+		});
+	} else if (loose || (!nonEnumerable && !nonWritable && !nonConfigurable)) {
+		// must fall back to [[Set]], and was not explicitly asked to make non-enumerable, non-writable, or non-configurable
+		obj[property] = value; // eslint-disable-line no-param-reassign
+	} else {
+		throw new $SyntaxError('This environment does not support defining a property as non-configurable, non-writable, or non-enumerable.');
+	}
+};
+
+},{"es-define-property":59,"es-errors/syntax":64,"es-errors/type":65,"gopd":70}],59:[function(require,module,exports){
+'use strict';
+
+var GetIntrinsic = require('get-intrinsic');
+
+/** @type {import('.')} */
+var $defineProperty = GetIntrinsic('%Object.defineProperty%', true) || false;
+if ($defineProperty) {
+	try {
+		$defineProperty({}, 'a', { value: 1 });
+	} catch (e) {
+		// IE 8 has a broken defineProperty
+		$defineProperty = false;
+	}
+}
+
+module.exports = $defineProperty;
+
+},{"get-intrinsic":69}],60:[function(require,module,exports){
+'use strict';
+
+/** @type {import('./eval')} */
+module.exports = EvalError;
+
+},{}],61:[function(require,module,exports){
+'use strict';
+
+/** @type {import('.')} */
+module.exports = Error;
+
+},{}],62:[function(require,module,exports){
+'use strict';
+
+/** @type {import('./range')} */
+module.exports = RangeError;
+
+},{}],63:[function(require,module,exports){
+'use strict';
+
+/** @type {import('./ref')} */
+module.exports = ReferenceError;
+
+},{}],64:[function(require,module,exports){
+'use strict';
+
+/** @type {import('./syntax')} */
+module.exports = SyntaxError;
+
+},{}],65:[function(require,module,exports){
+'use strict';
+
+/** @type {import('./type')} */
+module.exports = TypeError;
+
+},{}],66:[function(require,module,exports){
+'use strict';
+
+/** @type {import('./uri')} */
+module.exports = URIError;
+
+},{}],67:[function(require,module,exports){
+'use strict';
+
+/* eslint no-invalid-this: 1 */
+
+var ERROR_MESSAGE = 'Function.prototype.bind called on incompatible ';
+var toStr = Object.prototype.toString;
+var max = Math.max;
+var funcType = '[object Function]';
+
+var concatty = function concatty(a, b) {
+    var arr = [];
+
+    for (var i = 0; i < a.length; i += 1) {
+        arr[i] = a[i];
+    }
+    for (var j = 0; j < b.length; j += 1) {
+        arr[j + a.length] = b[j];
+    }
+
+    return arr;
+};
+
+var slicy = function slicy(arrLike, offset) {
+    var arr = [];
+    for (var i = offset || 0, j = 0; i < arrLike.length; i += 1, j += 1) {
+        arr[j] = arrLike[i];
+    }
+    return arr;
+};
+
+var joiny = function (arr, joiner) {
+    var str = '';
+    for (var i = 0; i < arr.length; i += 1) {
+        str += arr[i];
+        if (i + 1 < arr.length) {
+            str += joiner;
+        }
+    }
+    return str;
+};
+
+module.exports = function bind(that) {
+    var target = this;
+    if (typeof target !== 'function' || toStr.apply(target) !== funcType) {
+        throw new TypeError(ERROR_MESSAGE + target);
+    }
+    var args = slicy(arguments, 1);
+
+    var bound;
+    var binder = function () {
+        if (this instanceof bound) {
+            var result = target.apply(
+                this,
+                concatty(args, arguments)
+            );
+            if (Object(result) === result) {
+                return result;
+            }
+            return this;
+        }
+        return target.apply(
+            that,
+            concatty(args, arguments)
+        );
+
+    };
+
+    var boundLength = max(0, target.length - args.length);
+    var boundArgs = [];
+    for (var i = 0; i < boundLength; i++) {
+        boundArgs[i] = '$' + i;
+    }
+
+    bound = Function('binder', 'return function (' + joiny(boundArgs, ',') + '){ return binder.apply(this,arguments); }')(binder);
+
+    if (target.prototype) {
+        var Empty = function Empty() {};
+        Empty.prototype = target.prototype;
+        bound.prototype = new Empty();
+        Empty.prototype = null;
+    }
+
+    return bound;
+};
+
+},{}],68:[function(require,module,exports){
+'use strict';
+
+var implementation = require('./implementation');
+
+module.exports = Function.prototype.bind || implementation;
+
+},{"./implementation":67}],69:[function(require,module,exports){
+'use strict';
+
+var undefined;
+
+var $Error = require('es-errors');
+var $EvalError = require('es-errors/eval');
+var $RangeError = require('es-errors/range');
+var $ReferenceError = require('es-errors/ref');
+var $SyntaxError = require('es-errors/syntax');
+var $TypeError = require('es-errors/type');
+var $URIError = require('es-errors/uri');
+
+var $Function = Function;
+
+// eslint-disable-next-line consistent-return
+var getEvalledConstructor = function (expressionSyntax) {
+	try {
+		return $Function('"use strict"; return (' + expressionSyntax + ').constructor;')();
+	} catch (e) {}
+};
+
+var $gOPD = Object.getOwnPropertyDescriptor;
+if ($gOPD) {
+	try {
+		$gOPD({}, '');
+	} catch (e) {
+		$gOPD = null; // this is IE 8, which has a broken gOPD
+	}
+}
+
+var throwTypeError = function () {
+	throw new $TypeError();
+};
+var ThrowTypeError = $gOPD
+	? (function () {
+		try {
+			// eslint-disable-next-line no-unused-expressions, no-caller, no-restricted-properties
+			arguments.callee; // IE 8 does not throw here
+			return throwTypeError;
+		} catch (calleeThrows) {
+			try {
+				// IE 8 throws on Object.getOwnPropertyDescriptor(arguments, '')
+				return $gOPD(arguments, 'callee').get;
+			} catch (gOPDthrows) {
+				return throwTypeError;
+			}
+		}
+	}())
+	: throwTypeError;
+
+var hasSymbols = require('has-symbols')();
+var hasProto = require('has-proto')();
+
+var getProto = Object.getPrototypeOf || (
+	hasProto
+		? function (x) { return x.__proto__; } // eslint-disable-line no-proto
+		: null
+);
+
+var needsEval = {};
+
+var TypedArray = typeof Uint8Array === 'undefined' || !getProto ? undefined : getProto(Uint8Array);
+
+var INTRINSICS = {
+	__proto__: null,
+	'%AggregateError%': typeof AggregateError === 'undefined' ? undefined : AggregateError,
+	'%Array%': Array,
+	'%ArrayBuffer%': typeof ArrayBuffer === 'undefined' ? undefined : ArrayBuffer,
+	'%ArrayIteratorPrototype%': hasSymbols && getProto ? getProto([][Symbol.iterator]()) : undefined,
+	'%AsyncFromSyncIteratorPrototype%': undefined,
+	'%AsyncFunction%': needsEval,
+	'%AsyncGenerator%': needsEval,
+	'%AsyncGeneratorFunction%': needsEval,
+	'%AsyncIteratorPrototype%': needsEval,
+	'%Atomics%': typeof Atomics === 'undefined' ? undefined : Atomics,
+	'%BigInt%': typeof BigInt === 'undefined' ? undefined : BigInt,
+	'%BigInt64Array%': typeof BigInt64Array === 'undefined' ? undefined : BigInt64Array,
+	'%BigUint64Array%': typeof BigUint64Array === 'undefined' ? undefined : BigUint64Array,
+	'%Boolean%': Boolean,
+	'%DataView%': typeof DataView === 'undefined' ? undefined : DataView,
+	'%Date%': Date,
+	'%decodeURI%': decodeURI,
+	'%decodeURIComponent%': decodeURIComponent,
+	'%encodeURI%': encodeURI,
+	'%encodeURIComponent%': encodeURIComponent,
+	'%Error%': $Error,
+	'%eval%': eval, // eslint-disable-line no-eval
+	'%EvalError%': $EvalError,
+	'%Float32Array%': typeof Float32Array === 'undefined' ? undefined : Float32Array,
+	'%Float64Array%': typeof Float64Array === 'undefined' ? undefined : Float64Array,
+	'%FinalizationRegistry%': typeof FinalizationRegistry === 'undefined' ? undefined : FinalizationRegistry,
+	'%Function%': $Function,
+	'%GeneratorFunction%': needsEval,
+	'%Int8Array%': typeof Int8Array === 'undefined' ? undefined : Int8Array,
+	'%Int16Array%': typeof Int16Array === 'undefined' ? undefined : Int16Array,
+	'%Int32Array%': typeof Int32Array === 'undefined' ? undefined : Int32Array,
+	'%isFinite%': isFinite,
+	'%isNaN%': isNaN,
+	'%IteratorPrototype%': hasSymbols && getProto ? getProto(getProto([][Symbol.iterator]())) : undefined,
+	'%JSON%': typeof JSON === 'object' ? JSON : undefined,
+	'%Map%': typeof Map === 'undefined' ? undefined : Map,
+	'%MapIteratorPrototype%': typeof Map === 'undefined' || !hasSymbols || !getProto ? undefined : getProto(new Map()[Symbol.iterator]()),
+	'%Math%': Math,
+	'%Number%': Number,
+	'%Object%': Object,
+	'%parseFloat%': parseFloat,
+	'%parseInt%': parseInt,
+	'%Promise%': typeof Promise === 'undefined' ? undefined : Promise,
+	'%Proxy%': typeof Proxy === 'undefined' ? undefined : Proxy,
+	'%RangeError%': $RangeError,
+	'%ReferenceError%': $ReferenceError,
+	'%Reflect%': typeof Reflect === 'undefined' ? undefined : Reflect,
+	'%RegExp%': RegExp,
+	'%Set%': typeof Set === 'undefined' ? undefined : Set,
+	'%SetIteratorPrototype%': typeof Set === 'undefined' || !hasSymbols || !getProto ? undefined : getProto(new Set()[Symbol.iterator]()),
+	'%SharedArrayBuffer%': typeof SharedArrayBuffer === 'undefined' ? undefined : SharedArrayBuffer,
+	'%String%': String,
+	'%StringIteratorPrototype%': hasSymbols && getProto ? getProto(''[Symbol.iterator]()) : undefined,
+	'%Symbol%': hasSymbols ? Symbol : undefined,
+	'%SyntaxError%': $SyntaxError,
+	'%ThrowTypeError%': ThrowTypeError,
+	'%TypedArray%': TypedArray,
+	'%TypeError%': $TypeError,
+	'%Uint8Array%': typeof Uint8Array === 'undefined' ? undefined : Uint8Array,
+	'%Uint8ClampedArray%': typeof Uint8ClampedArray === 'undefined' ? undefined : Uint8ClampedArray,
+	'%Uint16Array%': typeof Uint16Array === 'undefined' ? undefined : Uint16Array,
+	'%Uint32Array%': typeof Uint32Array === 'undefined' ? undefined : Uint32Array,
+	'%URIError%': $URIError,
+	'%WeakMap%': typeof WeakMap === 'undefined' ? undefined : WeakMap,
+	'%WeakRef%': typeof WeakRef === 'undefined' ? undefined : WeakRef,
+	'%WeakSet%': typeof WeakSet === 'undefined' ? undefined : WeakSet
+};
+
+if (getProto) {
+	try {
+		null.error; // eslint-disable-line no-unused-expressions
+	} catch (e) {
+		// https://github.com/tc39/proposal-shadowrealm/pull/384#issuecomment-1364264229
+		var errorProto = getProto(getProto(e));
+		INTRINSICS['%Error.prototype%'] = errorProto;
+	}
+}
+
+var doEval = function doEval(name) {
+	var value;
+	if (name === '%AsyncFunction%') {
+		value = getEvalledConstructor('async function () {}');
+	} else if (name === '%GeneratorFunction%') {
+		value = getEvalledConstructor('function* () {}');
+	} else if (name === '%AsyncGeneratorFunction%') {
+		value = getEvalledConstructor('async function* () {}');
+	} else if (name === '%AsyncGenerator%') {
+		var fn = doEval('%AsyncGeneratorFunction%');
+		if (fn) {
+			value = fn.prototype;
+		}
+	} else if (name === '%AsyncIteratorPrototype%') {
+		var gen = doEval('%AsyncGenerator%');
+		if (gen && getProto) {
+			value = getProto(gen.prototype);
+		}
+	}
+
+	INTRINSICS[name] = value;
+
+	return value;
+};
+
+var LEGACY_ALIASES = {
+	__proto__: null,
+	'%ArrayBufferPrototype%': ['ArrayBuffer', 'prototype'],
+	'%ArrayPrototype%': ['Array', 'prototype'],
+	'%ArrayProto_entries%': ['Array', 'prototype', 'entries'],
+	'%ArrayProto_forEach%': ['Array', 'prototype', 'forEach'],
+	'%ArrayProto_keys%': ['Array', 'prototype', 'keys'],
+	'%ArrayProto_values%': ['Array', 'prototype', 'values'],
+	'%AsyncFunctionPrototype%': ['AsyncFunction', 'prototype'],
+	'%AsyncGenerator%': ['AsyncGeneratorFunction', 'prototype'],
+	'%AsyncGeneratorPrototype%': ['AsyncGeneratorFunction', 'prototype', 'prototype'],
+	'%BooleanPrototype%': ['Boolean', 'prototype'],
+	'%DataViewPrototype%': ['DataView', 'prototype'],
+	'%DatePrototype%': ['Date', 'prototype'],
+	'%ErrorPrototype%': ['Error', 'prototype'],
+	'%EvalErrorPrototype%': ['EvalError', 'prototype'],
+	'%Float32ArrayPrototype%': ['Float32Array', 'prototype'],
+	'%Float64ArrayPrototype%': ['Float64Array', 'prototype'],
+	'%FunctionPrototype%': ['Function', 'prototype'],
+	'%Generator%': ['GeneratorFunction', 'prototype'],
+	'%GeneratorPrototype%': ['GeneratorFunction', 'prototype', 'prototype'],
+	'%Int8ArrayPrototype%': ['Int8Array', 'prototype'],
+	'%Int16ArrayPrototype%': ['Int16Array', 'prototype'],
+	'%Int32ArrayPrototype%': ['Int32Array', 'prototype'],
+	'%JSONParse%': ['JSON', 'parse'],
+	'%JSONStringify%': ['JSON', 'stringify'],
+	'%MapPrototype%': ['Map', 'prototype'],
+	'%NumberPrototype%': ['Number', 'prototype'],
+	'%ObjectPrototype%': ['Object', 'prototype'],
+	'%ObjProto_toString%': ['Object', 'prototype', 'toString'],
+	'%ObjProto_valueOf%': ['Object', 'prototype', 'valueOf'],
+	'%PromisePrototype%': ['Promise', 'prototype'],
+	'%PromiseProto_then%': ['Promise', 'prototype', 'then'],
+	'%Promise_all%': ['Promise', 'all'],
+	'%Promise_reject%': ['Promise', 'reject'],
+	'%Promise_resolve%': ['Promise', 'resolve'],
+	'%RangeErrorPrototype%': ['RangeError', 'prototype'],
+	'%ReferenceErrorPrototype%': ['ReferenceError', 'prototype'],
+	'%RegExpPrototype%': ['RegExp', 'prototype'],
+	'%SetPrototype%': ['Set', 'prototype'],
+	'%SharedArrayBufferPrototype%': ['SharedArrayBuffer', 'prototype'],
+	'%StringPrototype%': ['String', 'prototype'],
+	'%SymbolPrototype%': ['Symbol', 'prototype'],
+	'%SyntaxErrorPrototype%': ['SyntaxError', 'prototype'],
+	'%TypedArrayPrototype%': ['TypedArray', 'prototype'],
+	'%TypeErrorPrototype%': ['TypeError', 'prototype'],
+	'%Uint8ArrayPrototype%': ['Uint8Array', 'prototype'],
+	'%Uint8ClampedArrayPrototype%': ['Uint8ClampedArray', 'prototype'],
+	'%Uint16ArrayPrototype%': ['Uint16Array', 'prototype'],
+	'%Uint32ArrayPrototype%': ['Uint32Array', 'prototype'],
+	'%URIErrorPrototype%': ['URIError', 'prototype'],
+	'%WeakMapPrototype%': ['WeakMap', 'prototype'],
+	'%WeakSetPrototype%': ['WeakSet', 'prototype']
+};
+
+var bind = require('function-bind');
+var hasOwn = require('hasown');
+var $concat = bind.call(Function.call, Array.prototype.concat);
+var $spliceApply = bind.call(Function.apply, Array.prototype.splice);
+var $replace = bind.call(Function.call, String.prototype.replace);
+var $strSlice = bind.call(Function.call, String.prototype.slice);
+var $exec = bind.call(Function.call, RegExp.prototype.exec);
+
+/* adapted from https://github.com/lodash/lodash/blob/4.17.15/dist/lodash.js#L6735-L6744 */
+var rePropName = /[^%.[\]]+|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(?:\.|\[\])(?:\.|\[\]|%$))/g;
+var reEscapeChar = /\\(\\)?/g; /** Used to match backslashes in property paths. */
+var stringToPath = function stringToPath(string) {
+	var first = $strSlice(string, 0, 1);
+	var last = $strSlice(string, -1);
+	if (first === '%' && last !== '%') {
+		throw new $SyntaxError('invalid intrinsic syntax, expected closing `%`');
+	} else if (last === '%' && first !== '%') {
+		throw new $SyntaxError('invalid intrinsic syntax, expected opening `%`');
+	}
+	var result = [];
+	$replace(string, rePropName, function (match, number, quote, subString) {
+		result[result.length] = quote ? $replace(subString, reEscapeChar, '$1') : number || match;
+	});
+	return result;
+};
+/* end adaptation */
+
+var getBaseIntrinsic = function getBaseIntrinsic(name, allowMissing) {
+	var intrinsicName = name;
+	var alias;
+	if (hasOwn(LEGACY_ALIASES, intrinsicName)) {
+		alias = LEGACY_ALIASES[intrinsicName];
+		intrinsicName = '%' + alias[0] + '%';
+	}
+
+	if (hasOwn(INTRINSICS, intrinsicName)) {
+		var value = INTRINSICS[intrinsicName];
+		if (value === needsEval) {
+			value = doEval(intrinsicName);
+		}
+		if (typeof value === 'undefined' && !allowMissing) {
+			throw new $TypeError('intrinsic ' + name + ' exists, but is not available. Please file an issue!');
+		}
+
+		return {
+			alias: alias,
+			name: intrinsicName,
+			value: value
+		};
+	}
+
+	throw new $SyntaxError('intrinsic ' + name + ' does not exist!');
+};
+
+module.exports = function GetIntrinsic(name, allowMissing) {
+	if (typeof name !== 'string' || name.length === 0) {
+		throw new $TypeError('intrinsic name must be a non-empty string');
+	}
+	if (arguments.length > 1 && typeof allowMissing !== 'boolean') {
+		throw new $TypeError('"allowMissing" argument must be a boolean');
+	}
+
+	if ($exec(/^%?[^%]*%?$/, name) === null) {
+		throw new $SyntaxError('`%` may not be present anywhere but at the beginning and end of the intrinsic name');
+	}
+	var parts = stringToPath(name);
+	var intrinsicBaseName = parts.length > 0 ? parts[0] : '';
+
+	var intrinsic = getBaseIntrinsic('%' + intrinsicBaseName + '%', allowMissing);
+	var intrinsicRealName = intrinsic.name;
+	var value = intrinsic.value;
+	var skipFurtherCaching = false;
+
+	var alias = intrinsic.alias;
+	if (alias) {
+		intrinsicBaseName = alias[0];
+		$spliceApply(parts, $concat([0, 1], alias));
+	}
+
+	for (var i = 1, isOwn = true; i < parts.length; i += 1) {
+		var part = parts[i];
+		var first = $strSlice(part, 0, 1);
+		var last = $strSlice(part, -1);
+		if (
+			(
+				(first === '"' || first === "'" || first === '`')
+				|| (last === '"' || last === "'" || last === '`')
+			)
+			&& first !== last
+		) {
+			throw new $SyntaxError('property names with quotes must have matching quotes');
+		}
+		if (part === 'constructor' || !isOwn) {
+			skipFurtherCaching = true;
+		}
+
+		intrinsicBaseName += '.' + part;
+		intrinsicRealName = '%' + intrinsicBaseName + '%';
+
+		if (hasOwn(INTRINSICS, intrinsicRealName)) {
+			value = INTRINSICS[intrinsicRealName];
+		} else if (value != null) {
+			if (!(part in value)) {
+				if (!allowMissing) {
+					throw new $TypeError('base intrinsic for ' + name + ' exists, but the property is not available.');
+				}
+				return void undefined;
+			}
+			if ($gOPD && (i + 1) >= parts.length) {
+				var desc = $gOPD(value, part);
+				isOwn = !!desc;
+
+				// By convention, when a data property is converted to an accessor
+				// property to emulate a data property that does not suffer from
+				// the override mistake, that accessor's getter is marked with
+				// an `originalValue` property. Here, when we detect this, we
+				// uphold the illusion by pretending to see that original data
+				// property, i.e., returning the value rather than the getter
+				// itself.
+				if (isOwn && 'get' in desc && !('originalValue' in desc.get)) {
+					value = desc.get;
+				} else {
+					value = value[part];
+				}
+			} else {
+				isOwn = hasOwn(value, part);
+				value = value[part];
+			}
+
+			if (isOwn && !skipFurtherCaching) {
+				INTRINSICS[intrinsicRealName] = value;
+			}
+		}
+	}
+	return value;
+};
+
+},{"es-errors":61,"es-errors/eval":60,"es-errors/range":62,"es-errors/ref":63,"es-errors/syntax":64,"es-errors/type":65,"es-errors/uri":66,"function-bind":68,"has-proto":72,"has-symbols":73,"hasown":75}],70:[function(require,module,exports){
+'use strict';
+
+var GetIntrinsic = require('get-intrinsic');
+
+var $gOPD = GetIntrinsic('%Object.getOwnPropertyDescriptor%', true);
+
+if ($gOPD) {
+	try {
+		$gOPD([], 'length');
+	} catch (e) {
+		// IE 8 has a broken gOPD
+		$gOPD = null;
+	}
+}
+
+module.exports = $gOPD;
+
+},{"get-intrinsic":69}],71:[function(require,module,exports){
+'use strict';
+
+var $defineProperty = require('es-define-property');
+
+var hasPropertyDescriptors = function hasPropertyDescriptors() {
+	return !!$defineProperty;
+};
+
+hasPropertyDescriptors.hasArrayLengthDefineBug = function hasArrayLengthDefineBug() {
+	// node v0.6 has a bug where array lengths can be Set but not Defined
+	if (!$defineProperty) {
+		return null;
+	}
+	try {
+		return $defineProperty([], 'length', { value: 1 }).length !== 1;
+	} catch (e) {
+		// In Firefox 4-22, defining length on an array throws an exception.
+		return true;
+	}
+};
+
+module.exports = hasPropertyDescriptors;
+
+},{"es-define-property":59}],72:[function(require,module,exports){
+'use strict';
+
+var test = {
+	__proto__: null,
+	foo: {}
+};
+
+var $Object = Object;
+
+/** @type {import('.')} */
+module.exports = function hasProto() {
+	// @ts-expect-error: TS errors on an inherited property for some reason
+	return { __proto__: test }.foo === test.foo
+		&& !(test instanceof $Object);
+};
+
+},{}],73:[function(require,module,exports){
+'use strict';
+
+var origSymbol = typeof Symbol !== 'undefined' && Symbol;
+var hasSymbolSham = require('./shams');
+
+module.exports = function hasNativeSymbols() {
+	if (typeof origSymbol !== 'function') { return false; }
+	if (typeof Symbol !== 'function') { return false; }
+	if (typeof origSymbol('foo') !== 'symbol') { return false; }
+	if (typeof Symbol('bar') !== 'symbol') { return false; }
+
+	return hasSymbolSham();
+};
+
+},{"./shams":74}],74:[function(require,module,exports){
+'use strict';
+
+/* eslint complexity: [2, 18], max-statements: [2, 33] */
+module.exports = function hasSymbols() {
+	if (typeof Symbol !== 'function' || typeof Object.getOwnPropertySymbols !== 'function') { return false; }
+	if (typeof Symbol.iterator === 'symbol') { return true; }
+
+	var obj = {};
+	var sym = Symbol('test');
+	var symObj = Object(sym);
+	if (typeof sym === 'string') { return false; }
+
+	if (Object.prototype.toString.call(sym) !== '[object Symbol]') { return false; }
+	if (Object.prototype.toString.call(symObj) !== '[object Symbol]') { return false; }
+
+	// temp disabled per https://github.com/ljharb/object.assign/issues/17
+	// if (sym instanceof Symbol) { return false; }
+	// temp disabled per https://github.com/WebReflection/get-own-property-symbols/issues/4
+	// if (!(symObj instanceof Symbol)) { return false; }
+
+	// if (typeof Symbol.prototype.toString !== 'function') { return false; }
+	// if (String(sym) !== Symbol.prototype.toString.call(sym)) { return false; }
+
+	var symVal = 42;
+	obj[sym] = symVal;
+	for (sym in obj) { return false; } // eslint-disable-line no-restricted-syntax, no-unreachable-loop
+	if (typeof Object.keys === 'function' && Object.keys(obj).length !== 0) { return false; }
+
+	if (typeof Object.getOwnPropertyNames === 'function' && Object.getOwnPropertyNames(obj).length !== 0) { return false; }
+
+	var syms = Object.getOwnPropertySymbols(obj);
+	if (syms.length !== 1 || syms[0] !== sym) { return false; }
+
+	if (!Object.prototype.propertyIsEnumerable.call(obj, sym)) { return false; }
+
+	if (typeof Object.getOwnPropertyDescriptor === 'function') {
+		var descriptor = Object.getOwnPropertyDescriptor(obj, sym);
+		if (descriptor.value !== symVal || descriptor.enumerable !== true) { return false; }
+	}
+
+	return true;
+};
+
+},{}],75:[function(require,module,exports){
+'use strict';
+
+var call = Function.prototype.call;
+var $hasOwn = Object.prototype.hasOwnProperty;
+var bind = require('function-bind');
+
+/** @type {import('.')} */
+module.exports = bind.call(call, $hasOwn);
+
+},{"function-bind":68}],76:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -38482,7 +40682,289 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],52:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
+'use strict';
+
+var keysShim;
+if (!Object.keys) {
+	// modified from https://github.com/es-shims/es5-shim
+	var has = Object.prototype.hasOwnProperty;
+	var toStr = Object.prototype.toString;
+	var isArgs = require('./isArguments'); // eslint-disable-line global-require
+	var isEnumerable = Object.prototype.propertyIsEnumerable;
+	var hasDontEnumBug = !isEnumerable.call({ toString: null }, 'toString');
+	var hasProtoEnumBug = isEnumerable.call(function () {}, 'prototype');
+	var dontEnums = [
+		'toString',
+		'toLocaleString',
+		'valueOf',
+		'hasOwnProperty',
+		'isPrototypeOf',
+		'propertyIsEnumerable',
+		'constructor'
+	];
+	var equalsConstructorPrototype = function (o) {
+		var ctor = o.constructor;
+		return ctor && ctor.prototype === o;
+	};
+	var excludedKeys = {
+		$applicationCache: true,
+		$console: true,
+		$external: true,
+		$frame: true,
+		$frameElement: true,
+		$frames: true,
+		$innerHeight: true,
+		$innerWidth: true,
+		$onmozfullscreenchange: true,
+		$onmozfullscreenerror: true,
+		$outerHeight: true,
+		$outerWidth: true,
+		$pageXOffset: true,
+		$pageYOffset: true,
+		$parent: true,
+		$scrollLeft: true,
+		$scrollTop: true,
+		$scrollX: true,
+		$scrollY: true,
+		$self: true,
+		$webkitIndexedDB: true,
+		$webkitStorageInfo: true,
+		$window: true
+	};
+	var hasAutomationEqualityBug = (function () {
+		/* global window */
+		if (typeof window === 'undefined') { return false; }
+		for (var k in window) {
+			try {
+				if (!excludedKeys['$' + k] && has.call(window, k) && window[k] !== null && typeof window[k] === 'object') {
+					try {
+						equalsConstructorPrototype(window[k]);
+					} catch (e) {
+						return true;
+					}
+				}
+			} catch (e) {
+				return true;
+			}
+		}
+		return false;
+	}());
+	var equalsConstructorPrototypeIfNotBuggy = function (o) {
+		/* global window */
+		if (typeof window === 'undefined' || !hasAutomationEqualityBug) {
+			return equalsConstructorPrototype(o);
+		}
+		try {
+			return equalsConstructorPrototype(o);
+		} catch (e) {
+			return false;
+		}
+	};
+
+	keysShim = function keys(object) {
+		var isObject = object !== null && typeof object === 'object';
+		var isFunction = toStr.call(object) === '[object Function]';
+		var isArguments = isArgs(object);
+		var isString = isObject && toStr.call(object) === '[object String]';
+		var theKeys = [];
+
+		if (!isObject && !isFunction && !isArguments) {
+			throw new TypeError('Object.keys called on a non-object');
+		}
+
+		var skipProto = hasProtoEnumBug && isFunction;
+		if (isString && object.length > 0 && !has.call(object, 0)) {
+			for (var i = 0; i < object.length; ++i) {
+				theKeys.push(String(i));
+			}
+		}
+
+		if (isArguments && object.length > 0) {
+			for (var j = 0; j < object.length; ++j) {
+				theKeys.push(String(j));
+			}
+		} else {
+			for (var name in object) {
+				if (!(skipProto && name === 'prototype') && has.call(object, name)) {
+					theKeys.push(String(name));
+				}
+			}
+		}
+
+		if (hasDontEnumBug) {
+			var skipConstructor = equalsConstructorPrototypeIfNotBuggy(object);
+
+			for (var k = 0; k < dontEnums.length; ++k) {
+				if (!(skipConstructor && dontEnums[k] === 'constructor') && has.call(object, dontEnums[k])) {
+					theKeys.push(dontEnums[k]);
+				}
+			}
+		}
+		return theKeys;
+	};
+}
+module.exports = keysShim;
+
+},{"./isArguments":79}],78:[function(require,module,exports){
+'use strict';
+
+var slice = Array.prototype.slice;
+var isArgs = require('./isArguments');
+
+var origKeys = Object.keys;
+var keysShim = origKeys ? function keys(o) { return origKeys(o); } : require('./implementation');
+
+var originalKeys = Object.keys;
+
+keysShim.shim = function shimObjectKeys() {
+	if (Object.keys) {
+		var keysWorksWithArguments = (function () {
+			// Safari 5.0 bug
+			var args = Object.keys(arguments);
+			return args && args.length === arguments.length;
+		}(1, 2));
+		if (!keysWorksWithArguments) {
+			Object.keys = function keys(object) { // eslint-disable-line func-name-matching
+				if (isArgs(object)) {
+					return originalKeys(slice.call(object));
+				}
+				return originalKeys(object);
+			};
+		}
+	} else {
+		Object.keys = keysShim;
+	}
+	return Object.keys || keysShim;
+};
+
+module.exports = keysShim;
+
+},{"./implementation":77,"./isArguments":79}],79:[function(require,module,exports){
+'use strict';
+
+var toStr = Object.prototype.toString;
+
+module.exports = function isArguments(value) {
+	var str = toStr.call(value);
+	var isArgs = str === '[object Arguments]';
+	if (!isArgs) {
+		isArgs = str !== '[object Array]' &&
+			value !== null &&
+			typeof value === 'object' &&
+			typeof value.length === 'number' &&
+			value.length >= 0 &&
+			toStr.call(value.callee) === '[object Function]';
+	}
+	return isArgs;
+};
+
+},{}],80:[function(require,module,exports){
+'use strict';
+
+// modified from https://github.com/es-shims/es6-shim
+var objectKeys = require('object-keys');
+var hasSymbols = require('has-symbols/shams')();
+var callBound = require('call-bind/callBound');
+var toObject = Object;
+var $push = callBound('Array.prototype.push');
+var $propIsEnumerable = callBound('Object.prototype.propertyIsEnumerable');
+var originalGetSymbols = hasSymbols ? Object.getOwnPropertySymbols : null;
+
+// eslint-disable-next-line no-unused-vars
+module.exports = function assign(target, source1) {
+	if (target == null) { throw new TypeError('target must be an object'); }
+	var to = toObject(target); // step 1
+	if (arguments.length === 1) {
+		return to; // step 2
+	}
+	for (var s = 1; s < arguments.length; ++s) {
+		var from = toObject(arguments[s]); // step 3.a.i
+
+		// step 3.a.ii:
+		var keys = objectKeys(from);
+		var getSymbols = hasSymbols && (Object.getOwnPropertySymbols || originalGetSymbols);
+		if (getSymbols) {
+			var syms = getSymbols(from);
+			for (var j = 0; j < syms.length; ++j) {
+				var key = syms[j];
+				if ($propIsEnumerable(from, key)) {
+					$push(keys, key);
+				}
+			}
+		}
+
+		// step 3.a.iii:
+		for (var i = 0; i < keys.length; ++i) {
+			var nextKey = keys[i];
+			if ($propIsEnumerable(from, nextKey)) { // step 3.a.iii.2
+				var propValue = from[nextKey]; // step 3.a.iii.2.a
+				to[nextKey] = propValue; // step 3.a.iii.2.b
+			}
+		}
+	}
+
+	return to; // step 4
+};
+
+},{"call-bind/callBound":56,"has-symbols/shams":74,"object-keys":78}],81:[function(require,module,exports){
+'use strict';
+
+var implementation = require('./implementation');
+
+var lacksProperEnumerationOrder = function () {
+	if (!Object.assign) {
+		return false;
+	}
+	/*
+	 * v8, specifically in node 4.x, has a bug with incorrect property enumeration order
+	 * note: this does not detect the bug unless there's 20 characters
+	 */
+	var str = 'abcdefghijklmnopqrst';
+	var letters = str.split('');
+	var map = {};
+	for (var i = 0; i < letters.length; ++i) {
+		map[letters[i]] = letters[i];
+	}
+	var obj = Object.assign({}, map);
+	var actual = '';
+	for (var k in obj) {
+		actual += k;
+	}
+	return str !== actual;
+};
+
+var assignHasPendingExceptions = function () {
+	if (!Object.assign || !Object.preventExtensions) {
+		return false;
+	}
+	/*
+	 * Firefox 37 still has "pending exception" logic in its Object.assign implementation,
+	 * which is 72% slower than our shim, and Firefox 40's native implementation.
+	 */
+	var thrower = Object.preventExtensions({ 1: 2 });
+	try {
+		Object.assign(thrower, 'xy');
+	} catch (e) {
+		return thrower[1] === 'y';
+	}
+	return false;
+};
+
+module.exports = function getPolyfill() {
+	if (!Object.assign) {
+		return implementation;
+	}
+	if (lacksProperEnumerationOrder()) {
+		return implementation;
+	}
+	if (assignHasPendingExceptions()) {
+		return implementation;
+	}
+	return Object.assign;
+};
+
+},{"./implementation":80}],82:[function(require,module,exports){
 (function (process){(function (){
 // 'path' module extracted from Node.js v8.11.1 (only the posix part)
 // transplited with Babel
@@ -39015,7 +41497,7 @@ posix.posix = posix;
 module.exports = posix;
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":53}],53:[function(require,module,exports){
+},{"_process":83}],83:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -39201,4 +41683,48 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}]},{},[2]);
+},{}],84:[function(require,module,exports){
+'use strict';
+
+var GetIntrinsic = require('get-intrinsic');
+var define = require('define-data-property');
+var hasDescriptors = require('has-property-descriptors')();
+var gOPD = require('gopd');
+
+var $TypeError = require('es-errors/type');
+var $floor = GetIntrinsic('%Math.floor%');
+
+/** @type {import('.')} */
+module.exports = function setFunctionLength(fn, length) {
+	if (typeof fn !== 'function') {
+		throw new $TypeError('`fn` is not a function');
+	}
+	if (typeof length !== 'number' || length < 0 || length > 0xFFFFFFFF || $floor(length) !== length) {
+		throw new $TypeError('`length` must be a positive 32-bit integer');
+	}
+
+	var loose = arguments.length > 2 && !!arguments[2];
+
+	var functionLengthIsConfigurable = true;
+	var functionLengthIsWritable = true;
+	if ('length' in fn && gOPD) {
+		var desc = gOPD(fn, 'length');
+		if (desc && !desc.configurable) {
+			functionLengthIsConfigurable = false;
+		}
+		if (desc && !desc.writable) {
+			functionLengthIsWritable = false;
+		}
+	}
+
+	if (functionLengthIsConfigurable || functionLengthIsWritable || !loose) {
+		if (hasDescriptors) {
+			define(/** @type {Parameters<define>[0]} */ (fn), 'length', length, true, true);
+		} else {
+			define(/** @type {Parameters<define>[0]} */ (fn), 'length', length);
+		}
+	}
+	return fn;
+};
+
+},{"define-data-property":58,"es-errors/type":65,"get-intrinsic":69,"gopd":70,"has-property-descriptors":71}]},{},[4]);

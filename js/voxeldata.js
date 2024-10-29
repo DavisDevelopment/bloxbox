@@ -99,7 +99,7 @@ const Material = module.exports.Material = {
    }
 };
 
-
+throw new Error('has been replaced');
 
 class BlockData {
    constructor(width, height, depth) {
@@ -162,7 +162,7 @@ class BlockData {
    getSunlitBlockAt(x, y) {
       // looks right
       for (let z = this.depth - 1; z >= 0; z--) {
-         if (this.getBlock(x, y, z) !== 0) {
+         if (this.getBlockType(x, y, z) !== 0) {
             return z;
          }
       }
@@ -175,7 +175,7 @@ class BlockData {
    */
   isSunlit(x, y, z) {
     for (let z2 = z + 1; z2 < this.depth; z2++) {
-      if (this.getBlock(x, y, z2) !== 0) {
+      if (this.getBlockType(x, y, z2) !== 0) {
         return false;
       }
     }
@@ -206,5 +206,45 @@ const world = new BlockData(width, height, depth, Uint32Array); // Using Uint32A
 world.setBlock(1, 2, 3, 5); // Assume '5' represents a specific block type
 
 // Get the block type at (1, 2, 3)
-const blockType = world.getBlock(1, 2, 3);
+const blockType = world.getBlockType(1, 2, 3);
 console.log("Block type at (1, 2, 3):", blockType);
+
+const geom = require('./geometry');
+
+/*
+ ChunkSection class
+*/
+class ChunkSection extends BlockData {
+   constructor(global_position) {
+      super(16, 16, 16);
+      this.loc = new geom.Rect3D(global_position.x, global_position.y, global_position.z, 16,16,16);
+   }
+
+   //TODO override the relevant BlockData methods to transform the 
+}
+
+class Chunk {
+   constructor(global_position) {
+      const gp = global_position;
+      this.n_sections = 4;
+
+      this.sections = [];
+      var sgp = {x:gp.x, y:gp.y, z:gp.z};
+      for (var i = 0; i < this.n_sections; i++) {
+         sgp.z = gp.z + i * 16;
+         this.sections.push(new ChunkSection(sgp));
+      }
+
+      this.loc = geom.Rect3D(gp.x, gp.y, gp.z, 16, 16, this.n_sections * 16);
+   }
+
+   contains(pt) {
+      return this.loc.containsPoint(pt);
+   }
+
+   section_index(x, y) {
+      return Math.floor(y / 16);
+   }
+
+
+}
