@@ -246,7 +246,13 @@ class TopDownRenderer {
                colormap[x][y] = `rgb(${color.r}, ${color.g}, ${color.b})`;
             }
             else if (z_south > z) {
-               //TODO
+               let lightenFactor = 1 + ((z_south - z) * 0.05);
+               let color = parseColor(colormap[x][y]);
+               color.r *= lightenFactor;
+               color.g *= lightenFactor;
+               color.b *= lightenFactor;
+
+               colormap[x][y] = `rgb(${color.r}, ${color.g}, ${color.b})`;
             }
          }
       }

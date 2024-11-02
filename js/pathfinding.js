@@ -10,8 +10,8 @@ const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
 var solid_materials = Material.all().map(Material.getMaterialByName);
 solid_materials = _.without(solid_materials, ...non_solids);
 
-console.log('non-solids=', non_solids);
-console.log('solids=', solid_materials);
+//console.log('non-solids=', non_solids);
+//console.log('solids=', solid_materials);
 
 
 const directions = {
@@ -22,20 +22,20 @@ const directions = {
    Up: { x: 0, y: 0, z: 1 },   // Up
    Down: { x: 0, y: 0, z: -1 },  // Down
 
-   ForwardRight: { x: 1, y: 1, z: 0 },  // Forward-Right
-   ForwardLeft: { x: -1, y: 1, z: 0 }, // Forward-Left
-   BackwardRight: { x: 1, y: -1, z: 0 }, // Backward-Right
-   BackwardLeft: { x: -1, y: -1, z: 0 },// Backward-Left
+   // ForwardRight: { x: 1, y: 1, z: 0 },  // Forward-Right
+   // ForwardLeft: { x: -1, y: 1, z: 0 }, // Forward-Left
+   // BackwardRight: { x: 1, y: -1, z: 0 }, // Backward-Right
+   // BackwardLeft: { x: -1, y: -1, z: 0 },// Backward-Left
 
-   UpRight: { x: 1, y: 0, z: 1 },  // Up-Right
-   UpLeft: { x: -1, y: 0, z: 1 }, // Up-Left
-   DownRight: { x: 1, y: 0, z: -1 }, // Down-Right
-   DownLeft: { x: -1, y: 0, z: -1 },// Down-Left
+   // UpRight: { x: 1, y: 0, z: 1 },  // Up-Right
+   // UpLeft: { x: -1, y: 0, z: 1 }, // Up-Left
+   // DownRight: { x: 1, y: 0, z: -1 }, // Down-Right
+   // DownLeft: { x: -1, y: 0, z: -1 },// Down-Left
 
-   ForwardUp: { x: 0, y: 1, z: 1 },  // Forward-Up
-   ForwardDown: { x: 0, y: 1, z: -1 }, // Forward-Down
-   BackwardUp: { x: 0, y: -1, z: 1 }, // Backward-Up
-   BackwardDown: { x: 0, y: -1, z: -1 },// Backward-Down
+   // ForwardUp: { x: 0, y: 1, z: 1 },  // Forward-Up
+   // ForwardDown: { x: 0, y: 1, z: -1 }, // Forward-Down
+   // BackwardUp: { x: 0, y: -1, z: 1 }, // Backward-Up
+   // BackwardDown: { x: 0, y: -1, z: -1 },// Backward-Down
 
    RightUp: { x: 1, y: 0, z: 1 },  // Right-Up
    RightDown: { x: 1, y: 0, z: -1 }, // Right-Down
@@ -93,9 +93,6 @@ class Node {
       return this.gCost + this.hCost;
    }
 
-   // _getKey(node) {
-   //    return `${node.x},${node.y},${node.z}`;
-   // }
    get key() {
       return `${this.x},${this.y},${this.z}`;
    }
@@ -131,13 +128,7 @@ class AStar {
    }
 
    _nodeFor(x, y=null, z=null) {
-      var k;
-      if (typeof x === 'string' && y == null && z == null) {
-         k = x;
-      }
-      else {
-         k = pkey(x, y, z);
-      }
+      var k = (typeof x === 'string' && y == null && z == null) ? x : pkey(x, y, z);
 
       if (_.has(this._nodes, k)) {
          return this._nodes[k];
@@ -150,7 +141,9 @@ class AStar {
    }
 
    heuristic(a, b) {
-      return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+      // //TODO change this to the manhattan distance between the two points
+      // return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+      return dist3d(a.x, a.y, a.z, b.x, b.y, b.z);
    }
 
    visit(pos) {
@@ -177,30 +170,31 @@ class AStar {
       );
    }
 
-/**
- * Determines if a move from one block to another is valid.
- *
- * A move is considered valid if the two blocks are adjacent in 3D space,
- * there are no solid blocks at the specified coordinates (ax, ay, az) and (bx, by, bz), 
- * and there are solid blocks directly below them. Additionally, if the nodes
- * representing these blocks are already connected, the move is valid.
- *
- * If the move is valid, it establishes a mutual connection between the nodes, preventing the need for adjacency checks and the like for subsequent calls
- *
- * @param {number} ax - The x-coordinate of the starting block.
- * @param {number} ay - The y-coordinate of the starting block.
- * @param {number} az - The z-coordinate of the starting block.
- * @param {number} bx - The x-coordinate of the destination block.
- * @param {number} by - The y-coordinate of the destination block.
- * @param {number} bz - The z-coordinate of the destination block.
- * @returns {boolean} - Returns true if the move is valid, false otherwise.
- */
-   // _isValidMove(ax, ay, az, bx, by, bz) {
-   //    var apos = {x: ax, y: ay, z: az};
-   //    var bpos = {x: bx, y: by, z: bz};
+   isStandable(world, x, y, z) {
+      // check that the block above the given position is AIR
+      const wd = world.data;
+      if (!(wd.isWithinBounds(x, y, z) && wd.isWithinBounds(x, y, z - 1))) {
+         return false;
+      }
 
+      var blocktype_here = wd.getBlockType(x, y, z);
+      var blocktype_above = wd.getBlockType(x, y, z - 1);
 
-   // }
+      //console.log(`A ${Material.getMaterialName(blocktype_here)} block with ${Material.getMaterialName(blocktype_above)} directly above it`);
+
+      var isCurrentBlockSolid = (blocktype_here != Material.AIR);
+      if (!isCurrentBlockSolid) {
+
+      }
+
+      var isBlockBelowAir = (blocktype_above == Material.AIR);
+      if (!isBlockBelowAir) {
+         return false;
+      }
+
+      return true;
+   }
+
    isValidMove(ax, ay, az, bx, by, bz) {
       if (ax === bx && ay === by && az === bz) {
          return false;
@@ -208,28 +202,29 @@ class AStar {
 
       var a = this._nodeFor(ax, ay, az);
       var b = this._nodeFor(bx, by, bz);
-      if (a.isConnectedTo(b) || b.isConnectedTo(a)) {
-         return true;
-      }
 
       if (dist3d(ax, ay, az, bx, by, bz) > 2) {
-         console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
+         //console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
          return false;
       }
 
       const world = this.world;
-      var apos = {x:ax, y:ay, z:az};
+      // var apos = {x:ax, y:ay, z:az};
 
-      var is_a_standable = (!isSolid(world, ax, ay, az) && isSolid(world, ax, ay, az - 1));
-      var is_b_standable = (!isSolid(world, bx, by, bz) && isSolid(world, bx, by, bz - 1));
+      var is_a_standable = this.isStandable(world, ax, ay, az);
+      var is_b_standable = this.isStandable(world, bx, by, bz);
 
-      let validity = (is_a_standable && is_b_standable);
-      if (validity) {
-         a.connectTo(b, true);
-         b.connectTo(a, true);
+      if (!is_a_standable) {
+         //console.log('move is invalid because point A cannot be stood on');
+         return false;
       }
 
-      return validity;
+      if (!is_b_standable) {
+         //console.log('move is invalid because point A cannot be stood on');
+         return false;
+      }
+
+      return true;
    }
 
    getNeighbors(node, grid = null) {
@@ -253,7 +248,7 @@ class AStar {
          const neighborBlockType = this.world.data.getBlockType(npt.x, npt.y, npt.z);
 
          var direction_name = _.findKey(directions, v => pteq(v, dirpt));
-         console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
+         //console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
 
          if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
             results.push(new Node(x, y, z, true));
@@ -277,14 +272,22 @@ class AStar {
       // visit(x, y - 1, z + 1);
 
       for (let k of _.keys(directions)) {
+         //console.log(`Checking if we can move ${k}`);
+
          var p = geom.ptsum(node, directions[k]);
+         if (!vmd.isWithinBounds(p.x, p.y, p.z))
+            continue;
+         
          var blockType = Material.getMaterialName(this.world.data.getBlockType(p.x, p.y, p.z));
-         console.log(`${k}: ${blockType}`);
+         //console.log(`${k}: ${blockType}`);
          
          if (this.isValidMove(node.x, node.y, node.z, p.x, p.y, p.z)) {
-            results.push(new Node(x, y, z, true));
+            // results.push(new Node(x, y, z, true));
+            results.push(this._nodeFor(p.x, p.y, p.z));
          }
       }
+
+      console.error('There were no valid moves from that position');
 
       this.neighborCache[nckey] = results;
 
@@ -311,6 +314,10 @@ class AStar {
       const closedSet = new Set();
 
       var start = this._nodeFor(this.start_pos.x, this.start_pos.y, this.start_pos.z);
+      if (this.getNeighbors(start).length == 0) {
+         throw new Error('We cannot move in any direction from here. Where are we?!');
+      }
+
       var end = this._nodeFor(this.end_pos.x, this.end_pos.y, this.end_pos.z);
       console.log(`Plotting path from ${start.key} to ${end.key}`);
 
@@ -320,6 +327,7 @@ class AStar {
       start.hCost = this.heuristic(start, end);
 
       while (openSet.length > 0) {
+         // sort the open nodes by fCost
          openSet.sort((a, b) => a.fCost - b.fCost);
          
          const currentNode = openSet.shift();
@@ -330,12 +338,15 @@ class AStar {
             return this.reconstructPath(currentNode);
          }
 
+         // If we have not, then mark the node as 'closed', since we know it's not what we're looking for
          closedSet.add(currentNode);
 
+         // Now we're going to scan the adjacent nodes which can be navigated to
          const neighbors = this.getNeighbors(currentNode);
          console.log(neighbors.length);
 
          for (const neighbor of neighbors) {
+            // skip the node if we've already checked it before
             if (_.any(closedSet, x => pteq(x, neighbor))) {
                continue;
             }
@@ -370,7 +381,7 @@ class AStar {
          temp = temp.parent;
       }
 
-      console.log('ween');
+      //console.log('ween');
       return path.reverse();
    }
 }

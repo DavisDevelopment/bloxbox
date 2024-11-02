@@ -557,133 +557,125 @@ module.exports.ptdiff = ptdiff;
 module.exports.ptsum = ptsum;
 
 },{}],4:[function(require,module,exports){
+function main() {
+   var nj = require('numjs');
+   const $ = require('jquery');
+   const w = require('./world');
+   var World = w.World;
+   var Material = w.Material;
+   var TopDownRenderer = require('./render2d').TopDownRenderer;
 
-var nj = require('numjs');
-const $ = require('jquery');
-const w = require('./world');
-var World = w.World;
-var Material = w.Material;
-var TopDownRenderer = require('./render2d').TopDownRenderer;
+   // require('./render3dcube');
 
-let world = new World({
-   size: [500, 500, 64*2]
-});
+   // return ;
+   let world = new World({
+      size: [500, 500, 64*2]
+   });
 
 
-/**
- * Generates a noisy altitude map for a flat region of a voxel world.
- *
- * @param {number} [noiseScale=0.1] - Controls the scale of the terrain features
- * @param {number} [heightFactor=25] - Maximum height variation for the terrain
- *
- * @returns {number[][]} - A 2D array of altitude values for each block in the region
- */
-function noisyAltitude(noiseScale=0.1, heightFactor=25, smoothingFactor=0) {
-   var sn = require('simplex-noise');
+   /**
+    * Generates a noisy altitude map for a flat region of a voxel world.
+    *
+    * @param {number} [noiseScale=0.1] - Controls the scale of the terrain features
+    * @param {number} [heightFactor=25] - Maximum height variation for the terrain
+    *
+    * @returns {number[][]} - A 2D array of altitude values for each block in the region
+    */
+   function noisyAltitude(noiseScale=0.1, heightFactor=25, smoothingFactor=0) {
+      var sn = require('simplex-noise');
 
-   // Initialize noise generator
-   const noise = sn.createNoise2D();
+      // Initialize noise generator
+      const noise = sn.createNoise2D();
 
-   // Function to determine height (Z position) of each block
-   function getHeight(x, y) {
-      // Generate noise value for (x, y), scaled by `noiseScale`
-      const noiseValue = noise(x * noiseScale, y * noiseScale);
+      // Function to determine height (Z position) of each block
+      function getHeight(x, y) {
+         // Generate noise value for (x, y), scaled by `noiseScale`
+         const noiseValue = noise(x * noiseScale, y * noiseScale);
 
-      // Map noise value (-1 to 1) to altitude (0 to heightFactor)
-      let sea_level = Math.floor(world.getDepth() * 0.5);
-      
-      return sea_level + Math.floor((noiseValue + 1) / 2 * heightFactor);
-   }
-
-   // Generate terrain for a flat region
-   const regionWidth = world.data.width;   // Width of the region
-   const regionHeight = world.data.height;   // Height of the region
-   const terrain/*: number[][]*/ = []; // Stores height map of the terrain
-
-   for (let x = 0; x < regionWidth; x++) {
-      terrain[x] = [];
-
-      for (let y = 0; y < regionHeight; y++) {
-         terrain[x][y] = getHeight(x, y);
+         // Map noise value (-1 to 1) to altitude (0 to heightFactor)
+         let sea_level = Math.floor(world.getDepth() * 0.5);
+         
+         return sea_level + Math.floor((noiseValue + 1) / 2 * heightFactor);
       }
-   }
 
-   // Apply smoothing to the terrain
-   if (smoothingFactor > 0) {
-      // This algorithm takes each block in the terrain and replaces its height with the average of its height and the heights of its four neighbors (N, S, E, W)
-      // This is done in a way that is more efficient than using nested for-loops with (x, y) coordinates
-      // Instead, we use a single loop and calculate the new height for each block as the average of the heights of the blocks in its neighborhood
+      // Generate terrain for a flat region
+      const regionWidth = world.data.width;   // Width of the region
+      const regionHeight = world.data.height;   // Height of the region
+      const terrain/*: number[][]*/ = []; // Stores height map of the terrain
+
       for (let x = 0; x < regionWidth; x++) {
+         terrain[x] = [];
+
          for (let y = 0; y < regionHeight; y++) {
-            // Calculate the average height of the block and its neighbors
-            // Start with the height of the block itself
-            let heightSum = terrain[x][y];
-            
-            // Add the heights of the neighbors to the sum
-            // We only add the heights of neighbors that exist (i.e. those that are not out of bounds)
-            if (x > 0) {
-               heightSum += terrain[x-1][y];
-            }
-            if (x < regionWidth-1) {
-               heightSum += terrain[x+1][y];
-            }
-            if (y > 0) {
-               heightSum += terrain[x][y-1];
-            }
-            if (y < regionHeight-1) {
-               heightSum += terrain[x][y+1];
-            }
-            
-            // Calculate the average height by dividing the sum by the number of neighbors (plus one for the block itself)
-            // Use Math.floor to round down to the nearest integer
-            terrain[x][y] = Math.floor(heightSum / (1 + (x > 0 ? 1 : 0) + (x < regionWidth-1 ? 1 : 0) + (y > 0 ? 1 : 0) + (y < regionHeight-1 ? 1 : 0)));
+            terrain[x][y] = getHeight(x, y);
          }
       }
+
+      // Apply smoothing to the terrain
+      if (smoothingFactor > 0) {
+         // This algorithm takes each block in the terrain and replaces its height with the average of its height and the heights of its four neighbors (N, S, E, W)
+         // This is done in a way that is more efficient than using nested for-loops with (x, y) coordinates
+         // Instead, we use a single loop and calculate the new height for each block as the average of the heights of the blocks in its neighborhood
+         for (let x = 0; x < regionWidth; x++) {
+            for (let y = 0; y < regionHeight; y++) {
+               // Calculate the average height of the block and its neighbors
+               // Start with the height of the block itself
+               let heightSum = terrain[x][y];
+               
+               // Add the heights of the neighbors to the sum
+               // We only add the heights of neighbors that exist (i.e. those that are not out of bounds)
+               if (x > 0) {
+                  heightSum += terrain[x-1][y];
+               }
+               if (x < regionWidth-1) {
+                  heightSum += terrain[x+1][y];
+               }
+               if (y > 0) {
+                  heightSum += terrain[x][y-1];
+               }
+               if (y < regionHeight-1) {
+                  heightSum += terrain[x][y+1];
+               }
+               
+               // Calculate the average height by dividing the sum by the number of neighbors (plus one for the block itself)
+               // Use Math.floor to round down to the nearest integer
+               terrain[x][y] = Math.floor(heightSum / (1 + (x > 0 ? 1 : 0) + (x < regionWidth-1 ? 1 : 0) + (y > 0 ? 1 : 0) + (y < regionHeight-1 ? 1 : 0)));
+            }
+         }
+      }
+
+      // You can now use `terrain[x][y]` to set the height of voxels in your world.
+      console.log(terrain);
+
+      return terrain;
    }
 
-   // You can now use `terrain[x][y]` to set the height of voxels in your world.
-   console.log(terrain);
-
-   return terrain;
-}
-
-var hillZ = noisyAltitude(0.32, 25, 1);
-
-for (let x = 0; x < world.data.width; x++) {
-   for (let y = 0; y < world.data.height; y++) {
-      let z = hillZ[x][y];
-      world.data.setBlockType(x, y, z, Material.GRASS);
+   // apply the 'noisy altitude' to the map
+   var hillZ = noisyAltitude(0.32, 25, 1);
+   for (let x = 0; x < world.data.width; x++) {
+      for (let y = 0; y < world.data.height; y++) {
+         let z = hillZ[x][y];
+         world.data.setBlockType(x, y, z, Material.GRASS);
+      }
    }
+
+   // instantiate the renderer, top-down by default
+   let renderer = new TopDownRenderer(world);
+
+   // expose the renderer so that it's accessible from the JavaScript console
+   window['renderer'] = renderer;
+
+   // begin the actual render-loop
+   renderer.render_loop();
+
+   /*
+   var Renderer3d = require('./render3d').Renderer3d;
+
+   let canvas = document.getElementById('box-canvas');
+   let renderer = new Renderer3d(canvas, world);
+   */
 }
-
-let renderer = new TopDownRenderer(world);
-
-window['renderer'] = renderer;
-
-function reNoiseAltitude(noiseScale, heightFactor, smoothingFactor) {}
-
-// const numSamples = 50;
-
-// var totalTime = 0;
-// for (let i = 0; i < numSamples; i++) {
-//    const startTime = performance.now();
-//    renderer.sample_voxels_topdown();
-//    const endTime = performance.now();
-//    totalTime += endTime - startTime;
-// }
-// const averageTime = totalTime / numSamples;
-// console.log(`Average time: ${averageTime}ms`);
-
-// begin the actual render-loop
-renderer.render_loop();
-
-/*
-var Renderer3d = require('./render3d').Renderer3d;
-
-let canvas = document.getElementById('box-canvas');
-let renderer = new Renderer3d(canvas, world);
-*/
-
+main();
 },{"./render2d":7,"./world":8,"jquery":18,"numjs":44,"simplex-noise":47}],5:[function(require,module,exports){
 
 const _ = require('underscore');
@@ -697,8 +689,8 @@ const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
 var solid_materials = Material.all().map(Material.getMaterialByName);
 solid_materials = _.without(solid_materials, ...non_solids);
 
-console.log('non-solids=', non_solids);
-console.log('solids=', solid_materials);
+//console.log('non-solids=', non_solids);
+//console.log('solids=', solid_materials);
 
 
 const directions = {
@@ -709,20 +701,20 @@ const directions = {
    Up: { x: 0, y: 0, z: 1 },   // Up
    Down: { x: 0, y: 0, z: -1 },  // Down
 
-   ForwardRight: { x: 1, y: 1, z: 0 },  // Forward-Right
-   ForwardLeft: { x: -1, y: 1, z: 0 }, // Forward-Left
-   BackwardRight: { x: 1, y: -1, z: 0 }, // Backward-Right
-   BackwardLeft: { x: -1, y: -1, z: 0 },// Backward-Left
+   // ForwardRight: { x: 1, y: 1, z: 0 },  // Forward-Right
+   // ForwardLeft: { x: -1, y: 1, z: 0 }, // Forward-Left
+   // BackwardRight: { x: 1, y: -1, z: 0 }, // Backward-Right
+   // BackwardLeft: { x: -1, y: -1, z: 0 },// Backward-Left
 
-   UpRight: { x: 1, y: 0, z: 1 },  // Up-Right
-   UpLeft: { x: -1, y: 0, z: 1 }, // Up-Left
-   DownRight: { x: 1, y: 0, z: -1 }, // Down-Right
-   DownLeft: { x: -1, y: 0, z: -1 },// Down-Left
+   // UpRight: { x: 1, y: 0, z: 1 },  // Up-Right
+   // UpLeft: { x: -1, y: 0, z: 1 }, // Up-Left
+   // DownRight: { x: 1, y: 0, z: -1 }, // Down-Right
+   // DownLeft: { x: -1, y: 0, z: -1 },// Down-Left
 
-   ForwardUp: { x: 0, y: 1, z: 1 },  // Forward-Up
-   ForwardDown: { x: 0, y: 1, z: -1 }, // Forward-Down
-   BackwardUp: { x: 0, y: -1, z: 1 }, // Backward-Up
-   BackwardDown: { x: 0, y: -1, z: -1 },// Backward-Down
+   // ForwardUp: { x: 0, y: 1, z: 1 },  // Forward-Up
+   // ForwardDown: { x: 0, y: 1, z: -1 }, // Forward-Down
+   // BackwardUp: { x: 0, y: -1, z: 1 }, // Backward-Up
+   // BackwardDown: { x: 0, y: -1, z: -1 },// Backward-Down
 
    RightUp: { x: 1, y: 0, z: 1 },  // Right-Up
    RightDown: { x: 1, y: 0, z: -1 }, // Right-Down
@@ -780,9 +772,6 @@ class Node {
       return this.gCost + this.hCost;
    }
 
-   // _getKey(node) {
-   //    return `${node.x},${node.y},${node.z}`;
-   // }
    get key() {
       return `${this.x},${this.y},${this.z}`;
    }
@@ -818,13 +807,7 @@ class AStar {
    }
 
    _nodeFor(x, y=null, z=null) {
-      var k;
-      if (typeof x === 'string' && y == null && z == null) {
-         k = x;
-      }
-      else {
-         k = pkey(x, y, z);
-      }
+      var k = (typeof x === 'string' && y == null && z == null) ? x : pkey(x, y, z);
 
       if (_.has(this._nodes, k)) {
          return this._nodes[k];
@@ -837,7 +820,9 @@ class AStar {
    }
 
    heuristic(a, b) {
-      return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+      // //TODO change this to the manhattan distance between the two points
+      // return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
+      return dist3d(a.x, a.y, a.z, b.x, b.y, b.z);
    }
 
    visit(pos) {
@@ -864,30 +849,31 @@ class AStar {
       );
    }
 
-/**
- * Determines if a move from one block to another is valid.
- *
- * A move is considered valid if the two blocks are adjacent in 3D space,
- * there are no solid blocks at the specified coordinates (ax, ay, az) and (bx, by, bz), 
- * and there are solid blocks directly below them. Additionally, if the nodes
- * representing these blocks are already connected, the move is valid.
- *
- * If the move is valid, it establishes a mutual connection between the nodes, preventing the need for adjacency checks and the like for subsequent calls
- *
- * @param {number} ax - The x-coordinate of the starting block.
- * @param {number} ay - The y-coordinate of the starting block.
- * @param {number} az - The z-coordinate of the starting block.
- * @param {number} bx - The x-coordinate of the destination block.
- * @param {number} by - The y-coordinate of the destination block.
- * @param {number} bz - The z-coordinate of the destination block.
- * @returns {boolean} - Returns true if the move is valid, false otherwise.
- */
-   // _isValidMove(ax, ay, az, bx, by, bz) {
-   //    var apos = {x: ax, y: ay, z: az};
-   //    var bpos = {x: bx, y: by, z: bz};
+   isStandable(world, x, y, z) {
+      // check that the block above the given position is AIR
+      const wd = world.data;
+      if (!(wd.isWithinBounds(x, y, z) && wd.isWithinBounds(x, y, z - 1))) {
+         return false;
+      }
 
+      var blocktype_here = wd.getBlockType(x, y, z);
+      var blocktype_above = wd.getBlockType(x, y, z - 1);
 
-   // }
+      //console.log(`A ${Material.getMaterialName(blocktype_here)} block with ${Material.getMaterialName(blocktype_above)} directly above it`);
+
+      var isCurrentBlockSolid = (blocktype_here != Material.AIR);
+      if (!isCurrentBlockSolid) {
+
+      }
+
+      var isBlockBelowAir = (blocktype_above == Material.AIR);
+      if (!isBlockBelowAir) {
+         return false;
+      }
+
+      return true;
+   }
+
    isValidMove(ax, ay, az, bx, by, bz) {
       if (ax === bx && ay === by && az === bz) {
          return false;
@@ -895,28 +881,29 @@ class AStar {
 
       var a = this._nodeFor(ax, ay, az);
       var b = this._nodeFor(bx, by, bz);
-      if (a.isConnectedTo(b) || b.isConnectedTo(a)) {
-         return true;
-      }
 
       if (dist3d(ax, ay, az, bx, by, bz) > 2) {
-         console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
+         //console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
          return false;
       }
 
       const world = this.world;
-      var apos = {x:ax, y:ay, z:az};
+      // var apos = {x:ax, y:ay, z:az};
 
-      var is_a_standable = (!isSolid(world, ax, ay, az) && isSolid(world, ax, ay, az - 1));
-      var is_b_standable = (!isSolid(world, bx, by, bz) && isSolid(world, bx, by, bz - 1));
+      var is_a_standable = this.isStandable(world, ax, ay, az);
+      var is_b_standable = this.isStandable(world, bx, by, bz);
 
-      let validity = (is_a_standable && is_b_standable);
-      if (validity) {
-         a.connectTo(b, true);
-         b.connectTo(a, true);
+      if (!is_a_standable) {
+         //console.log('move is invalid because point A cannot be stood on');
+         return false;
       }
 
-      return validity;
+      if (!is_b_standable) {
+         //console.log('move is invalid because point A cannot be stood on');
+         return false;
+      }
+
+      return true;
    }
 
    getNeighbors(node, grid = null) {
@@ -940,7 +927,7 @@ class AStar {
          const neighborBlockType = this.world.data.getBlockType(npt.x, npt.y, npt.z);
 
          var direction_name = _.findKey(directions, v => pteq(v, dirpt));
-         console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
+         //console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
 
          if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
             results.push(new Node(x, y, z, true));
@@ -964,14 +951,22 @@ class AStar {
       // visit(x, y - 1, z + 1);
 
       for (let k of _.keys(directions)) {
+         //console.log(`Checking if we can move ${k}`);
+
          var p = geom.ptsum(node, directions[k]);
+         if (!vmd.isWithinBounds(p.x, p.y, p.z))
+            continue;
+         
          var blockType = Material.getMaterialName(this.world.data.getBlockType(p.x, p.y, p.z));
-         console.log(`${k}: ${blockType}`);
+         //console.log(`${k}: ${blockType}`);
          
          if (this.isValidMove(node.x, node.y, node.z, p.x, p.y, p.z)) {
-            results.push(new Node(x, y, z, true));
+            // results.push(new Node(x, y, z, true));
+            results.push(this._nodeFor(p.x, p.y, p.z));
          }
       }
+
+      console.error('There were no valid moves from that position');
 
       this.neighborCache[nckey] = results;
 
@@ -998,6 +993,10 @@ class AStar {
       const closedSet = new Set();
 
       var start = this._nodeFor(this.start_pos.x, this.start_pos.y, this.start_pos.z);
+      if (this.getNeighbors(start).length == 0) {
+         throw new Error('We cannot move in any direction from here. Where are we?!');
+      }
+
       var end = this._nodeFor(this.end_pos.x, this.end_pos.y, this.end_pos.z);
       console.log(`Plotting path from ${start.key} to ${end.key}`);
 
@@ -1007,6 +1006,7 @@ class AStar {
       start.hCost = this.heuristic(start, end);
 
       while (openSet.length > 0) {
+         // sort the open nodes by fCost
          openSet.sort((a, b) => a.fCost - b.fCost);
          
          const currentNode = openSet.shift();
@@ -1017,12 +1017,15 @@ class AStar {
             return this.reconstructPath(currentNode);
          }
 
+         // If we have not, then mark the node as 'closed', since we know it's not what we're looking for
          closedSet.add(currentNode);
 
+         // Now we're going to scan the adjacent nodes which can be navigated to
          const neighbors = this.getNeighbors(currentNode);
          console.log(neighbors.length);
 
          for (const neighbor of neighbors) {
+            // skip the node if we've already checked it before
             if (_.any(closedSet, x => pteq(x, neighbor))) {
                continue;
             }
@@ -1057,7 +1060,7 @@ class AStar {
          temp = temp.parent;
       }
 
-      console.log('ween');
+      //console.log('ween');
       return path.reverse();
    }
 }
@@ -1102,7 +1105,11 @@ class Person extends Entity {
       this.tasks = [
          new behavior.LaunchTask((person, n) => {
             console.log('peen');
-            var targetPos = { x: 0, y: 0, z: this.world.data.getSunlitBlockAt(0, 0) + 1 };
+            var targetPos = {
+               x: 0, 
+               y: 0, 
+               z: this.world.data.getSunlitBlockAt(0, 0)
+            };
 
             let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
             let walk = new behavior.WalkPath(path);
@@ -1408,7 +1415,13 @@ class TopDownRenderer {
                colormap[x][y] = `rgb(${color.r}, ${color.g}, ${color.b})`;
             }
             else if (z_south > z) {
-               //TODO
+               let lightenFactor = 1 + ((z_south - z) * 0.05);
+               let color = parseColor(colormap[x][y]);
+               color.r *= lightenFactor;
+               color.g *= lightenFactor;
+               color.b *= lightenFactor;
+
+               colormap[x][y] = `rgb(${color.r}, ${color.g}, ${color.b})`;
             }
          }
       }
@@ -32295,7 +32308,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 
 // takes ~157ms on a 5000x5000 image
-var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_31_arg0_=4899*_inline_31_arg1_+9617*_inline_31_arg2_+1868*_inline_31_arg3_+8192>>14}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
+var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_37_arg0_=4899*_inline_37_arg1_+9617*_inline_37_arg2_+1868*_inline_37_arg3_+8192>>14}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
 
 /**
  * Compute Grayscale version of an RGB image.
@@ -32330,7 +32343,7 @@ module.exports = function rgb2gray (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_37_arg0_=0!==_inline_37_arg2_[0]&&0!==_inline_37_arg2_[1]?_inline_37_arg1_+_inline_37_arg4_+_inline_37_arg5_-_inline_37_arg3_:0===_inline_37_arg2_[0]&&0===_inline_37_arg2_[1]?_inline_37_arg1_:0===_inline_37_arg2_[0]?_inline_37_arg1_+_inline_37_arg5_:_inline_37_arg1_+_inline_37_arg4_}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Sum Area Table, also known as the integral of the image
@@ -32430,7 +32443,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_28_q=_inline_28_arg2_+2*_inline_28_arg3_+_inline_28_arg4_-_inline_28_arg7_-2*_inline_28_arg8_-_inline_28_arg9_,_inline_28_s=_inline_28_arg2_-_inline_28_arg4_+2*_inline_28_arg5_-2*_inline_28_arg6_+_inline_28_arg7_-_inline_28_arg9_;_inline_28_arg0_=Math.sqrt(_inline_28_s*_inline_28_s+_inline_28_q*_inline_28_q)}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_28_q","_inline_28_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=_inline_31_arg2_+2*_inline_31_arg3_+_inline_31_arg4_-_inline_31_arg7_-2*_inline_31_arg8_-_inline_31_arg9_,_inline_31_s=_inline_31_arg2_-_inline_31_arg4_+2*_inline_31_arg5_-2*_inline_31_arg6_+_inline_31_arg7_-_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
@@ -32469,7 +32482,7 @@ module.exports = function computeSobel (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_*_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_*_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_28_arg0_=0!==_inline_28_arg2_[0]&&0!==_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_+_inline_28_arg5_-_inline_28_arg3_:0===_inline_28_arg2_[0]&&0===_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_:0===_inline_28_arg2_[0]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg5_:_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image

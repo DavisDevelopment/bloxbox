@@ -20,7 +20,11 @@ class Person extends Entity {
       this.tasks = [
          new behavior.LaunchTask((person, n) => {
             console.log('peen');
-            var targetPos = { x: 0, y: 0, z: this.world.data.getSunlitBlockAt(0, 0) + 1 };
+            var targetPos = {
+               x: 0, 
+               y: 0, 
+               z: this.world.data.getSunlitBlockAt(0, 0)
+            };
 
             let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
             let walk = new behavior.WalkPath(path);
