@@ -3,39 +3,98 @@ const _ = require('underscore');
 const v = require('./blockdata');
 const Material = v.Material;
 const behavior = require('./behavior');
+const {BlockSelection} = require('./blockselection');
+
+function uuid() {
+   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+   });
+}
+
+const nn = (v) => (typeof v !== 'undefined' && v !== null);
 
 class Entity {
    //
 }
 
+/*
+TODO give Person an Inventory, so that they can hold blocks/items
+*/
 class Person extends Entity {
-   //TODO constructor
-   constructor() {
+   constructor(world) {
       super();
 
+      // the World into which this Person is being instantiated
+      this.world = world;
+
+      // the unique identifier String that will be used to store/retrieve this Person instance among others
+      this.uid = uuid();
+
+      // the position the Person is standing at
       this.pos = {x:0, y:0, z:0};
 
-      this.territory = null;
+      // the community of Persons to which this instance belongs
+      this.village = null;
+
+      // the Person (where applicable) to which this one reports
       this.master = null;
+
+      // a Set of block coordinates which this Person has laid claim to
+      this.claimed_blocks = this.world.villagerPropertyClaims[this.uid] = new BlockSelection();
+
+      // the object used to look up paths between points in the World
+      this.pathfinder = new pf.AStar(this.world);
+
+      // the object used to handle the items/blocks which are carried by this Person
+      this.inventory = new Inventory();
+
+      // the list of Task instances to be pinged at every tick
+      //? this is the current rough-draft implementation, to be changed drastically I'm sure
       this.tasks = [
-         new behavior.LaunchTask((person, n) => {
-            console.log('peen');
-            var targetPos = {
-               x: 0, 
-               y: 0, 
-               z: this.world.data.getSunlitBlockAt(0, 0)
-            };
-
-            let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
-            let walk = new behavior.WalkPath(path);
-
-            var revpath = path.slice().reverse();
-            let walk_back = walk.next_task = new behavior.WalkPath(revpath);
-            walk_back.next_task = walk;
-
-            return walk;
-         })
+         //
       ];
+
+      let launchWalkTask = new behavior.LaunchTask((person, n) => {
+         console.log('Creating and launching the WalkPath task');
+
+         var targetPos = {
+            x: 0,
+            y: 0,
+            z: this.world.data.getSunlitBlockAt(0, 0)
+         };
+
+         let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
+         let walk = new behavior.WalkPath(path);
+
+         var path_reversed = path.slice().reverse();
+         let walk_back = new behavior.WalkPath(path_reversed);
+
+         // create mutual "nextness" between these two walking tasks
+         //? i.e. when one finishes, it forwards the other as the next task to be carried out
+         walk.next_task = walk_back;
+         walk_back.next_task = walk;
+
+         return walk;
+      });
+
+      this.addTask(launchWalkTask);
+   }
+
+   claimBlock(x, y, z) {
+      // eventually, we're gonna want to check that no one else has claimed the block before we decide it's ours
+      if (!this.claimed_blocks.contains(x, y, z)) {
+         this.claimed_blocks.add(x, y, z);
+      }
+   }
+
+   addTask(task, prepend=false) {
+      if (prepend) {
+         this.tasks.unshift(task);
+      }
+      else {
+         this.tasks.push(task);
+      }
    }
 
    setPos(x, y, z) {
@@ -59,18 +118,20 @@ class Person extends Entity {
    }
 
    calcPathTo(x, y, z, opts=null) {
-      var ast = new pf.AStar(this.world);
+      const target_pos = {x:x, y:y, z:z};
+      const start_pos = _.clone(this.pos);
 
-      return ast.findpath(_.clone(this.pos), {x:x, y:y, z:z}, null, opts);
+      return this.pathfinder.findpath(start_pos, target_pos);
    }
 
    tick(world, n) {
-      this.world = world;
+      // this.world = world;
 
       const blocks = world.data;
 
       for (let i = 0; i < this.tasks.length; i++) {
-         if (!this.tasks[i]) continue;
+         if (!this.tasks[i]) 
+            continue;
          var task = this.tasks[i];
          this.tasks[i] = task.tick(this, n);
       }
@@ -81,3 +142,94 @@ const pf = require('./pathfinding');
 
 
 module.exports['Person'] = Person;
+
+/**
+ * The Inventory class - provides block/item storage
+ */
+class Inventory {
+   constructor() {
+      this.n_slots = 16;
+      this.slot_max_capacity = 64;
+      this.slots = new Array(this.n_slots);
+      this.equipped_index = 0;
+
+      // initialize the slots
+      for (var i = 0; i < this.slots.length; i++) {
+         // items of the same type identifier will be grouped together and considered to be the same in general
+         this.slots[i] = {
+            type: null, // the type identifier for this slot
+            count: 0, // the number of items stored in this slot
+            item: null // the object representing the contents of the slot
+         };
+      }
+   }
+
+   getSlot(q) {
+      if (typeof q === 'function') {
+         return _.find(this.slots, q);
+      }
+      else {
+         const {i, type, item} = q;
+         if (nn(i) && typeof i === 'number')
+            return this.slots[i];
+
+         var qo;
+
+         if (nn(type))
+            qo = (slot => slot.type === type);
+         else if (nn(item))
+            qo = (slot => slot.item == item);
+         else
+            throw new TypeError(`Invalid q argument given: ${q}`);
+
+         return this.getSlot(qo);
+      }
+   }
+
+   hasItem(type) {
+      //TODO
+   }
+
+   addItem(item, type=null, count=1) {
+      if (type == null || typeof type !== 'string')
+         throw new TypeError('type should be a String');
+
+      // check if we already have a slot which is occupied by the given type
+      const existingSlotOfThatType = _.find(this.slots, slot => slot.type === type);
+
+      // if we do
+      if (existingSlotOfThatType != null) {
+         // just sum the counts
+         existingSlotOfThatType.count += count;
+
+         //? maybe there's more to do, I can't think of it rn tho
+
+         return true;
+      }
+
+      // if we do not
+      else {
+         // we'll find the first empty slot
+         const firstEmptySlotIndex = _.findIndex(this.slots, slot => (slot.type == null));
+
+         // if we have any empty slots
+         if (firstEmptySlotIndex !== -1) {
+            const slot = this.slots[firstEmptySlotIndex];
+            slot.type = type;
+            slot.count += count;
+            slot.item = item;
+
+            return true;
+         }
+
+         return false;
+      }
+   }
+
+   resetSlot(slot) {
+      slot.type = slot.item = null;
+      slot.count = 0;
+   }
+}
+
+module.exports.Inventory = Inventory;

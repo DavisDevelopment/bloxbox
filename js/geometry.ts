@@ -58,3 +58,24 @@ function ptsum(a: Pt3D, b: Pt3D): Pt3D {
 
 module.exports.ptdiff = ptdiff;
 module.exports.ptsum = ptsum;
+
+
+class Mesh {
+    vertices: Float32Array;
+    indices: Uint32Array;
+
+    constructor(vertices: Float32Array, indices: Uint32Array) {
+        this.vertices = vertices;
+        this.indices = indices;
+    }
+
+    get numVertices() {
+        return this.vertices.length / 3;
+    }
+
+    get numIndices() {
+        return this.indices.length;
+    }
+}
+
+module.exports.Mesh = Mesh;

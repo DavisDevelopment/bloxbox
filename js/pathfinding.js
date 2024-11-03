@@ -7,12 +7,8 @@ const Material = v.Material;
 const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
 
 // solid materials. e.g. materials which can be walked on, but not walked through
-var solid_materials = Material.all().map(Material.getMaterialByName);
-solid_materials = _.without(solid_materials, ...non_solids);
-
-//console.log('non-solids=', non_solids);
-//console.log('solids=', solid_materials);
-
+var solid_materials = Material.all().map(Material.getMaterialByName).filter(material => !non_solids.includes(material));
+console.log(non_solids, solid_materials);
 
 const directions = {
    Forward: { x: 0, y: 1, z: 0 },   // Forward
@@ -51,11 +47,10 @@ const block = (world, ...args) => {
 };
 
 const isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
-const isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
 
 
 class Node {
-   constructor(x, y, z, walkable) {
+   constructor(x, y, z, walkable=true) {
       if (typeof x === 'undefined') throw new Error(`x=${x}`);
       if (typeof y === 'undefined') throw new Error(`y=${y}`);
       if (typeof z === 'undefined') throw new Error(`z=${z}`);
@@ -64,25 +59,27 @@ class Node {
       this.y = y;
       this.z = z;
 
-      this.walkable = walkable;
+      this.walkable = walkable; // can this Node be stood upon
       this.gCost = Infinity; // Cost from start to this node
-      this.hCost = 0; // Heuristic cost to end node
-      this.parent = null; // For path reconstruction
+      this.hCost = 0; // Heuristic-estimated cost from this node to end node
 
-      // Connections stored by 'key' with mutual status
-      this.connections = {};
+      this.parent = null; // For path reconstruction. This is a reference to the previous Node in the path, I think
+
+      // The Nodes to which this Node has been determined to be adjacent
+      this.neighbors = {};
    }
 
    isConnectedTo(other) {
-      if (other == this) return false;
+      if (other == this) 
+         return false;
 
       const otherKey = other.key;
-      return this.connections.hasOwnProperty(otherKey);
+      return this.neighbors.hasOwnProperty(otherKey);
    }
 
    connectTo(other, mutual = false) {
       const otherKey = other.key;
-      this.connections[otherKey] = mutual ? "mutual" : "not mutual";
+      this.neighbors[otherKey] = mutual ? "mutual" : "not mutual";
 
       if (mutual) {
          other.connectTo(this, false);
@@ -94,17 +91,12 @@ class Node {
    }
 
    get key() {
-      return `${this.x},${this.y},${this.z}`;
+      if (!this._key)
+         this._key =`${this.x},${this.y},${this.z}`;
+      return this._key;
    }
 }
 
-const toNode = (pos) => {
-   if (pos instanceof Node) {
-      return pos;
-   } else {
-      return new Node(pos.x, pos.y, pos.z, true);
-   }
-}
 
 function pkey(x, y, z) {
    return `${x},${y},${z}`;
@@ -124,13 +116,14 @@ class AStar {
    }
 
    poskey(pos) {
+      
       return pkey(pos.x, pos.y, pos.z);
    }
 
    _nodeFor(x, y=null, z=null) {
       var k = (typeof x === 'string' && y == null && z == null) ? x : pkey(x, y, z);
 
-      if (_.has(this._nodes, k)) {
+      if (this._nodes.hasOwnProperty(k)) {
          return this._nodes[k];
       }
       else {
@@ -180,11 +173,9 @@ class AStar {
       var blocktype_here = wd.getBlockType(x, y, z);
       var blocktype_above = wd.getBlockType(x, y, z - 1);
 
-      //console.log(`A ${Material.getMaterialName(blocktype_here)} block with ${Material.getMaterialName(blocktype_above)} directly above it`);
-
       var isCurrentBlockSolid = (blocktype_here != Material.AIR);
       if (!isCurrentBlockSolid) {
-
+         //
       }
 
       var isBlockBelowAir = (blocktype_above == Material.AIR);
@@ -200,8 +191,6 @@ class AStar {
          return false;
       }
 
-      var a = this._nodeFor(ax, ay, az);
-      var b = this._nodeFor(bx, by, bz);
 
       if (dist3d(ax, ay, az, bx, by, bz) > 2) {
          //console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
@@ -209,18 +198,15 @@ class AStar {
       }
 
       const world = this.world;
-      // var apos = {x:ax, y:ay, z:az};
 
       var is_a_standable = this.isStandable(world, ax, ay, az);
       var is_b_standable = this.isStandable(world, bx, by, bz);
 
       if (!is_a_standable) {
-         //console.log('move is invalid because point A cannot be stood on');
          return false;
       }
 
       if (!is_b_standable) {
-         //console.log('move is invalid because point A cannot be stood on');
          return false;
       }
 
@@ -229,67 +215,32 @@ class AStar {
 
    getNeighbors(node, grid = null) {
       const me = this;
-      if (!this.neighborCache) this.neighborCache = {};
+      // if (!this.neighborCache) this.neighborCache = {};
 
-      const nckey = this.poskey(node);
-      if (_.has(this.neighborCache, nckey)) {
-         return this.neighborCache[nckey];
-      }
+      const nckey = node.key;//this.poskey(node);
+
+      // if (_.has(this.neighborCache, nckey)) {
+      //    return this.neighborCache[nckey];
+      // }
 
       const world = this.world;
-      var x = node.x, y = node.y, z = node.z;
 
       var vmd = world.data;
       var results = [];
-      
-      const visit = (x, y, z) => {
-         const dirpt = geom.ptdiff(node, {x:x, y:y, z:z});
-         const npt = geom.ptsum(node, dirpt);
-         const neighborBlockType = this.world.data.getBlockType(npt.x, npt.y, npt.z);
-
-         var direction_name = _.findKey(directions, v => pteq(v, dirpt));
-         //console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
-
-         if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
-            results.push(new Node(x, y, z, true));
-         }
-      }
-
-
-      // visit(x, y + 1, z);//Forward
-      // visit(x, y - 1, z);//Backward
-      // visit(x + 1, y, z);//Left
-      // visit(x - 1, y, z);//Right
-
-      // visit(x + 1, y, z - 1);//Left/Down
-      // visit(x - 1, y, z - 1);
-      // visit(x, y + 1, z - 1);
-      // visit(x, y - 1, z - 1);
-
-      // visit(x + 1, y, z + 1);
-      // visit(x - 1, y, z + 1);
-      // visit(x, y + 1, z + 1);
-      // visit(x, y - 1, z + 1);
-
+   
+      // when the motion of one's bowels are foamy, you know that's not your homie
       for (let k of _.keys(directions)) {
-         //console.log(`Checking if we can move ${k}`);
 
          var p = geom.ptsum(node, directions[k]);
          if (!vmd.isWithinBounds(p.x, p.y, p.z))
             continue;
          
-         var blockType = Material.getMaterialName(this.world.data.getBlockType(p.x, p.y, p.z));
-         //console.log(`${k}: ${blockType}`);
-         
          if (this.isValidMove(node.x, node.y, node.z, p.x, p.y, p.z)) {
-            // results.push(new Node(x, y, z, true));
             results.push(this._nodeFor(p.x, p.y, p.z));
          }
       }
 
-      console.error('There were no valid moves from that position');
-
-      this.neighborCache[nckey] = results;
+      // this.neighborCache[nckey] = results;
 
       return results;
    }
@@ -304,8 +255,6 @@ class AStar {
 
       options = options || {};
       //! will necessitate a BlockModJournal class of some kind to implement
-      const can_modify = options.can_modify || false; // whether block placement/removal may be part of the 'path'
-      const one_way = options.one_way || false; // should one-way paths be considered. i.e. jumping down to a position we couldn't have walked to
 
       this.start_pos = start_pos;
       this.end_pos = end_pos;
@@ -335,6 +284,7 @@ class AStar {
 
          // If we have reached a suitable target position
          if (pteq(currentNode, end)) {
+            // reconstruct and return the path
             return this.reconstructPath(currentNode);
          }
 
@@ -347,7 +297,7 @@ class AStar {
 
          for (const neighbor of neighbors) {
             // skip the node if we've already checked it before
-            if (_.any(closedSet, x => pteq(x, neighbor))) {
+            if (closedSet.has(neighbor)) {
                continue;
             }
 
@@ -362,8 +312,6 @@ class AStar {
                   openSet.push(neighbor);
                }
             }
-
-            
          }
       }
 

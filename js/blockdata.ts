@@ -1,7 +1,7 @@
 
 var assert = require('assert');
 
-var geom = require('./geometry');
+// var geom = require('./geometry');
 const _ = require('underscore');
 
 const CHUNK_WIDTH = 16;

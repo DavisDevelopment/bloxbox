@@ -8,6 +8,9 @@ var BlockData = vd.BlockData;
 var wd = require('./blockdata');
 var gen = require('./worldgen');
 
+const geom = require('./geometry');
+// import {BlockSelection} from './blockselection';
+const {BlockSelection} = require('./blockselection');
 
 class World {
    constructor(config) {
@@ -27,6 +30,10 @@ class World {
       this.entities = new Array();
       
       //TODO set all blocks to grass
+
+
+      // Mapping from villager uids to the BlockSelections that comprise their respective property claims
+      this.villagerPropertyClaims = {};
    }
 
    getBlock(x, y, z) {

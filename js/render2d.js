@@ -6,6 +6,8 @@ var Person = require('./person').Person;
 const Material = w.Material;
 const World = w.World;
 
+const {Rect3D} = require('./geometry');
+
 class Rect {
    constructor(x, y, width, height) {
       this.x = x;
@@ -32,11 +34,19 @@ class TopDownRenderer {
       }
 
       this.world = world;
+
       this.viewRect = new ViewRect(0, 0, world.getWidth(), world.getHeight());
 
+      // 2D matrix used to cache the highest non-air blocks
       this.topBlocks = nj.zeros([world.getWidth(), world.getHeight()]);
       this._disposalRoutines = [];
 
+      // fields related to FPS monitoring
+      this._lastSecondStart = null;
+      this._framesThisSecond = 0;
+      this._fpslog = [];
+
+      // initialize the canvas for our render loop
       this.initCanvas();
    }
 
@@ -140,10 +150,12 @@ class TopDownRenderer {
       try {
          // // Select the block at the clicked position
          const z = this.topBlocks.get(worldX, worldY);
-  
-         var guy = new Person();
+         
+         var guy = new Person(me.world);
          guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
+
+         guy.inventory.addItem({block_type:'sapling'}, 6, 25);
       }
       catch (error) {
          console.error(error);
@@ -165,10 +177,10 @@ class TopDownRenderer {
 
          const selectedBlock = vmd.getBlockType(worldX, worldY, z);
          if (selectedBlock !== 0) { // Assuming 0 represents an empty block
-            vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
-            
+            vmd.setBlockType(worldX, worldY, z, Material.AIR); // Place a block of specified type
+
             if (z - 1 >= 0) {
-               me.topBlocks.set(worldX, worldY, z - 1);
+               me.topBlocks.set(worldX, worldY, z + 1);
             }
    
             console.log(`Removed block at (${worldX}, ${worldY})`);
@@ -192,29 +204,17 @@ class TopDownRenderer {
       });
    }
 
-   // Function to adjust color brightness based on depth
-   adjustColorForDepth(baseColor, z, zmin=null, zmax=null) {
-      zmax = zmax || this.world.data.depth;
-      zmin = zmin || 0;
-
-      if (typeof baseColor === 'string') {
-         baseColor = parseColor(baseColor);
-      }
-
-      let color = baseColor;
-
-      // Calculate a depth factor between 0 and 1, where Z=0 is fully bright, and maxZ is darkest
-      const depthFactor = (z - zmin) / (zmax - zmin);
-
-      // Adjust the RGB channels based on the depth factor
-      const r = Math.floor(color.r * depthFactor);
-      const g = Math.floor(color.g * depthFactor);
-      const b = Math.floor(color.b * depthFactor);
-
-      // Convert to string
-      return `rgb(${r}, ${g}, ${b})`;
-   }
-
+   /**
+    * Generates a color map for the top layer of blocks in the world.
+    * 
+    * This function iterates over the top blocks in the world data, retrieves their material type, 
+    * and assigns a color based on the material. It adjusts the brightness of the block's color 
+    * based on the relative height differences with its northern and southern neighbors, simulating 
+    * shading effects.
+    * 
+    * @returns {Array} A 2D array representing the color map where each element is the color of the block
+    *                  in RGB string format.
+    */
    getColorMap() {
       const wd = this.world.data;
       const topBlocks = this.topBlocks;
@@ -260,15 +260,111 @@ class TopDownRenderer {
       return colormap;
    }
 
+   renderLandscape() {
+      const wd = this.world.data;
+      const blockSize = 30;
+
+      var offscreenCanvas;
+      var offscreenCtx;
+
+      if (!this._landscapeCanvas) {
+         try {
+            offscreenCanvas = new OffscreenCanvas(wd.width * blockSize, wd.height * blockSize);
+            offscreenCtx = offscreenCanvas.getContext('2d');
+         }
+         catch (error) {
+            offscreenCanvas.width = wd.width * blockSize;
+            offscreenCanvas.height = wd.height * blockSize;
+            offscreenCtx = offscreenCanvas.getContext('2d');
+         }
+
+         this._landscapeCanvas = offscreenCanvas;
+         this._landscapeCtx = offscreenCtx;
+      }
+      else {
+         offscreenCanvas = this._landscapeCanvas;
+         offscreenCtx = this._landscapeCtx;
+      }
+
+      const colorMap = this.getColorMap();
+      
+      // once practical, only redraw when a change has been made to the world
+      for (let x = 0; x < wd.width; x++) {
+         for (let y = 0; y < wd.height; y++) {
+            let z = this.topBlocks.get(x, y);
+            let material = wd.getBlockType(x, y, z);
+
+            // let cell_color = colorMap[x][y];
+            let cell_color = Material.getColorOf(material);
+            
+            offscreenCtx.fillStyle = cell_color;
+            offscreenCtx.fillRect(x * blockSize, y * blockSize, blockSize, blockSize);
+         }
+      }
+         
+      // return offscreenCanvas;
+      var result = {
+         image: offscreenCanvas,
+         blockSize: blockSize
+      };
+
+      console.log(result);
+
+      return result;
+   }
+
+   drawLandscapeToGlobalCanvas() {
+      // We have our landscape image, but now we need to draw it onto the global canvas that we're rendering to.
+      // To do this, we need to:
+      // 1. Scale the landscape image according to the user's zoom level.
+      // 2. Center the landscape image horizontally and vertically on the canvas.
+      // 3. Draw the landscape image onto the canvas at the calculated position and size.
+
+      const c = this.context;
+      let landscape = this.renderLandscape();
+
+      let globalBlockSize = (3 * this.viewRect.zoomFactor);
+      let localBlockSize = 30;
+      let globalViewRect = this.viewRect;
+      
+      let cropX = (globalViewRect.x * localBlockSize);
+      let cropY = (globalViewRect.y * localBlockSize);
+      
+      let img = landscape.image;
+
+      c.drawImage(
+         img, 
+         0, 0, img.width, img.height, 
+         globalViewRect.x, globalViewRect.y, (img.width / localBlockSize) * globalBlockSize, (img.height / localBlockSize) * globalBlockSize
+      );
+   }
+
    sample_voxels_topdown() {
+      // do some frames-per-second calculations
+      let now = performance.now();
+      if (this._lastSecondStart == null || (now - this._lastSecondStart >= 1000)) {
+         if (this._lastSecondStart != null) {
+            this._fpslog.push(this._framesThisSecond);
+         }
+
+         this._lastSecondStart = now;
+         this._framesThisSecond = 0;
+      }
+
       let world_shape = this.world.data.shape;
       let vmd = this.world.data;
       let width = vmd.width, height = vmd.height, depth = vmd.depth;
 
       let c = this.context;
+
+      // erase the canvas so that it can be repainted
       c.clearRect(0, 0, this.canvasElem.width, this.canvasElem.height);
 
-      var blockSize = 3;
+      // self explanatory
+      // this.drawLandscapeToGlobalCanvas();
+
+      // render all other items onto c
+      let blockSize = 3;
       blockSize *= (this.viewRect.zoomFactor);
 
       this.world.tick(1);
@@ -306,10 +402,14 @@ class TopDownRenderer {
       }
 
       // Draw little circles to represent the Persons in `this.world.entities`
-      this.world.entities.forEach(entity => {
+      for (var i = 0; i < this.world.entities.length; i++) {
+         let entity = this.world.entities[i];
+
+         // calculate where to put the circle
          let displX = (entity.pos.x * blockSize) + this.viewRect.x;
          let diplY = (entity.pos.y * blockSize) + this.viewRect.y;
          
+         // draw the circle
          c.beginPath();
          c.arc(displX + blockSize / 2, diplY + blockSize / 2, blockSize / 2, 0, 2 * Math.PI);
          c.fillStyle = 'red'; // Example color for the person
@@ -317,7 +417,8 @@ class TopDownRenderer {
 
          // Draw a sequence of lines to visualize the path of the person
          if (entity._activePath) {
-            c.strokeStyle = 'blue'; // Example color for the path
+            // Example color for the path
+            c.strokeStyle = 'blue'; 
             c.lineWidth = 2;
 
             c.beginPath();
@@ -330,7 +431,32 @@ class TopDownRenderer {
             }
             c.stroke();
          }
-      });
+
+         // Draw an outline around the boundaries of this Person's claimed_blocks
+         if (entity.claimed_blocks && entity.claimed_blocks.length > 0) {
+            c.strokeStyle = 'black'; // Example color for the outline
+            c.lineWidth = 0.75;
+
+            c.beginPath();
+            entity.claimed_blocks.forEach(block => {
+               let displX = (block.x * blockSize) + this.viewRect.x;
+               let diplY = (block.y * blockSize) + this.viewRect.y;
+               c.rect(displX, diplY, blockSize, blockSize);
+            });
+            c.stroke();
+         }
+      }
+
+      // draw the frames-per-second to top-right corner of the canvas
+      if (this._fpslog.length > 1) {
+         c.font = '12px Arial';
+         c.fillStyle = 'black';
+         c.textAlign = 'right';
+         c.fillText("FPS: " + this._fpslog[this._fpslog.length - 1], this.canvasElem.width - 30, 24);
+      }
+
+      // increment the frame-count
+      this._framesThisSecond++;
    }
 }
 

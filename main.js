@@ -8,13 +8,31 @@ const pteq = pf.pteq;
 
 class Task {
    constructor() {
-      // this.running = false;
-      // this.complete = false;
-      // this.suspended = false;
+      this.has_started = false;
+      this.running = false;
+      this.is_complete = false;
+      this.suspended = false;
       this.next_task = null;
    }
 
+   begin() {
+      if (!this.has_started) {
+         this.has_started = true;
+         this.running = true;
+      }
+   }
+
+   complete() {
+      if (this.has_started && this.running && !this.is_complete) {
+         this.is_complete = true;
+         this.has_started = this.running = false;
+      }
+   }
+
    tick(person) {
+      if (!this.has_started) {
+         this.begin();
+      }
 
       return this;
    }
@@ -29,13 +47,18 @@ class WalkPath extends Task {
    }
 
    tick(person, n) {
+      super.tick(person);
+
+      // reset and proceed to the next task when we've reached the end of the path
       if (this.path.length == 0 || pteq(person.pos, this.path[this.path.length - 1])) {
          this.current_node = 0;
+         this.complete();
+
          return this.next_task;
       }
 
+      // when we haven't reached the end of the path, move to the next position along the path
       var target = this.path[this.current_node++];
-
       person.setPos(target.x, target.y, target.z);
 
       return this;
@@ -56,7 +79,116 @@ class LaunchTask extends Task {
 module.exports.Task=Task;
 module.exports.WalkPath=WalkPath;
 module.exports.LaunchTask=LaunchTask;
-},{"./blockdata":2,"./pathfinding.js":5,"underscore":49}],2:[function(require,module,exports){
+
+class MineBlock extends Task {
+   constructor(targetBlock) {
+      super();
+      this.targetBlock = targetBlock;
+   }
+
+   tick(person, n) {
+      const { x, y, z } = this.targetBlock;
+
+      // Calculate the distance between the person and the target block
+      const distance = Math.sqrt(
+         Math.pow(person.pos.x - x, 2) + 
+         Math.pow(person.pos.y - y, 2) + 
+         Math.pow(person.pos.z - z, 2)
+      );
+
+      // if the person is within range of the block
+      if (distance <= 5) {
+         // first, get some info about the block being taken
+         const oldBlockType = person.world.getBlockType(x, y, z);
+         const blockItemType = Material.getMaterialName(oldBlockType);
+         const blockItemCount = 1;
+
+         const blockItemObject = {
+            block_type: blockItemType,
+         };
+
+         // now, remove that block from the world, replacing it with air
+         person.world.setBlockType(x, y, z, Material.AIR);
+
+         // add the block into the person's inventory
+         person.inventory.addItem(blockItemObject, blockItemType, blockItemCount);
+
+         this.complete();
+         return this.next_task;
+      }
+
+      // otherwise
+      else {
+         // walk there
+         const path = person.calcPathTo(x, y, z);
+         let walk = new WalkPath(path);
+
+         // and then return to this task when we have completed that walk
+         walk.next_task = this;
+         return walk;
+      }
+   }
+}
+
+module.exports.MineBlock = MineBlock;
+
+class PlaceBlock extends Task {
+   constructor(blockType, targetPosition) {
+      super();
+
+      this.targetPosition = targetPosition;
+      this.blockToPlace = blockType;
+
+      
+   }
+
+   tick(person, n) {
+      const {x, y, z} = this.targetPosition;
+      
+      const distance = Math.sqrt(
+         Math.pow(person.pos.x - x, 2) + 
+         Math.pow(person.pos.y - y, 2) + 
+         Math.pow(person.pos.z - z, 2)
+      );
+
+      // if the person is within range of the block
+      if (distance <= 5) {
+         // first, get some info about the block being taken
+         const oldBlockType = person.world.getBlockType(x, y, z);
+         const blockItemType = Material.getMaterialName(oldBlockType);
+         const blockItemCount = 1;
+
+         // check if the person has the block in their inventory
+         var invSlot = person.inventory.getSlot({type:Material.getMaterialName(this.blockToPlace)});
+         if (invSlot != null) {
+            invSlot.count--;
+            if (invSlot.count == 0) {
+               player.inventory.resetSlot(invSlot);
+            }
+
+            // set the block in the world
+            person.world.setBlockType(x, y, z, this.blockToPlace);
+
+            // complete this task
+            this.complete();
+            return this.next_task;
+         }
+      }
+
+      // otherwise
+      else {
+         // walk there
+         const path = person.calcPathTo(x, y, z);
+         let walk = new WalkPath(path);
+
+         // and then return to this task when we have completed that walk
+         walk.next_task = this;
+         return walk;
+      }
+   }
+}
+module.exports.PlaceBlock = PlaceBlock;
+},{"./blockdata":2,"./pathfinding.js":6,"underscore":50}],2:[function(require,module,exports){
 (function (Buffer){(function (){
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -74,7 +206,7 @@ var __extends = (this && this.__extends) || (function () {
     };
 })();
 var assert = require('assert');
-var geom = require('./geometry');
+// var geom = require('./geometry');
 var _ = require('underscore');
 var CHUNK_WIDTH = 16;
 var CHUNK_HEIGHT = 16;
@@ -514,7 +646,196 @@ function test_Chunk() {
 run_tests();
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./geometry":3,"assert":51,"buffer":56,"underscore":49}],3:[function(require,module,exports){
+},{"assert":52,"buffer":57,"underscore":50}],3:[function(require,module,exports){
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+(function () {
+    // const geom = require('./geometry');
+    var _a = require('./geometry'), Rect3D = _a.Rect3D, Mesh = _a.Mesh;
+    /*
+       the RegionBuffer efficiently stores a selection of voxel coordinates which can
+       be dynamically edited via addBlock, removeBlock, containsBlock, etc. methods
+    */
+    var RegionBuffer = /** @class */ (function () {
+        function RegionBuffer() {
+            this.blocks = new Set();
+        }
+        /**
+         * Add a block to the selection
+         * @param x
+         * @param y
+         * @param z
+         */
+        RegionBuffer.prototype.addBlock = function (x, y, z) {
+            this.blocks.add("".concat(x, ",").concat(y, ",").concat(z));
+        };
+        /**
+         * Remove a block from the selection
+         * @param x
+         * @param y
+         * @param z
+         */
+        RegionBuffer.prototype.removeBlock = function (x, y, z) {
+            this.blocks.delete("".concat(x, ",").concat(y, ",").concat(z));
+        };
+        /**
+         * Check if a block is in the selection
+         * @param x
+         * @param y
+         * @param z
+         */
+        RegionBuffer.prototype.containsBlock = function (x, y, z) {
+            return this.blocks.has("".concat(x, ",").concat(y, ",").concat(z));
+        };
+        /**
+         * Get all blocks in the selection as an array of [x, y, z]
+         */
+        RegionBuffer.prototype.getBlocks = function () {
+            return Array.from(this.blocks).map(function (s) { return s.split(',').map(Number); });
+        };
+        RegionBuffer.prototype[Symbol.iterator] = function () {
+            var _i, _a, coords;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        _i = 0, _a = this.getBlocks();
+                        _b.label = 1;
+                    case 1:
+                        if (!(_i < _a.length)) return [3 /*break*/, 4];
+                        coords = _a[_i];
+                        return [4 /*yield*/, coords];
+                    case 2:
+                        _b.sent();
+                        _b.label = 3;
+                    case 3:
+                        _i++;
+                        return [3 /*break*/, 1];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        };
+        return RegionBuffer;
+    }());
+    var BlockSelection = /** @class */ (function () {
+        function BlockSelection() {
+            this.b = new RegionBuffer();
+        }
+        Object.defineProperty(BlockSelection.prototype, "length", {
+            get: function () {
+                return this.b.blocks.size;
+            },
+            enumerable: false,
+            configurable: true
+        });
+        BlockSelection.prototype.add = function (x, y, z) {
+            this.b.addBlock(x, y, z);
+        };
+        BlockSelection.prototype.addRect3D = function (rect) {
+            for (var x = rect.x; x < rect.x + rect.length; x++) {
+                for (var y = rect.y; y < rect.y + rect.width; y++) {
+                    for (var z = rect.z; z < rect.z + rect.height; z++) {
+                        this.b.addBlock(x, y, z);
+                    }
+                }
+            }
+        };
+        BlockSelection.prototype.remove = function (x, y, z) {
+            this.b.removeBlock(x, y, z);
+        };
+        BlockSelection.prototype.contains = function (x, y, z) {
+            return this.b.containsBlock(x, y, z);
+        };
+        BlockSelection.prototype.all = function () {
+            return this.b.getBlocks();
+        };
+        /*
+        combines all 'selected' blocks into a single 3D shape
+        */
+        BlockSelection.prototype.getMesh = function () {
+            var vertices = new Float32Array(this.b.getBlocks().length * 3 * 3 * 3 * 8);
+            var index = 0;
+            for (var _i = 0, _a = this.b.getBlocks(); _i < _a.length; _i++) {
+                var block = _a[_i];
+                var x = block[0], y = block[1], z = block[2];
+                for (var dx = 0; dx < 3; dx++) {
+                    for (var dy = 0; dy < 3; dy++) {
+                        for (var dz = 0; dz < 3; dz++) {
+                            var x2 = x + dx - 1;
+                            var y2 = y + dy - 1;
+                            var z2 = z + dz - 1;
+                            vertices[index++] = x2;
+                            vertices[index++] = y2;
+                            vertices[index++] = z2;
+                        }
+                    }
+                }
+            }
+            return new Mesh(vertices, new Uint32Array(this.b.getBlocks().length * 3 * 3 * 3 * 12));
+        };
+        /*
+        Calculates the geom.Rect3D which contains all selected blocks
+         */
+        BlockSelection.prototype.getContainingRect = function (margin) {
+            var blocks = this.b.getBlocks();
+            if (blocks.length === 0) {
+                return null;
+            }
+            var minX = Number.MAX_VALUE, minY = Number.MAX_VALUE, minZ = Number.MAX_VALUE;
+            var maxX = Number.MIN_VALUE, maxY = Number.MIN_VALUE, maxZ = Number.MIN_VALUE;
+            for (var _i = 0, blocks_1 = blocks; _i < blocks_1.length; _i++) {
+                var _a = blocks_1[_i], x = _a[0], y = _a[1], z = _a[2];
+                if (x < minX)
+                    minX = x;
+                if (y < minY)
+                    minY = y;
+                if (z < minZ)
+                    minZ = z;
+                if (x > maxX)
+                    maxX = x;
+                if (y > maxY)
+                    maxY = y;
+                if (z > maxZ)
+                    maxZ = z;
+            }
+            var marginX = typeof margin === 'number' ? margin : margin.x || 0;
+            var marginY = typeof margin === 'number' ? margin : margin.y || 0;
+            var marginZ = typeof margin === 'number' ? margin : margin.z || 0;
+            return new Rect3D(minX - marginX, minY - marginY, minZ - marginZ, maxX - minX + 1 + 2 * marginX, maxY - minY + 1 + 2 * marginY, maxZ - minZ + 1 + 2 * marginZ);
+        };
+        BlockSelection.prototype.expandToContainingRect = function () {
+            this.addRect3D(this.getContainingRect(0));
+        };
+        return BlockSelection;
+    }());
+    module.exports.BlockSelection = BlockSelection;
+})();
+
+},{"./geometry":4}],4:[function(require,module,exports){
 var Rect3D = /** @class */ (function () {
     function Rect3D(x, y, z, length, width, height) {
         this.x = x;
@@ -555,8 +876,30 @@ function ptsum(a, b) {
 }
 module.exports.ptdiff = ptdiff;
 module.exports.ptsum = ptsum;
+var Mesh = /** @class */ (function () {
+    function Mesh(vertices, indices) {
+        this.vertices = vertices;
+        this.indices = indices;
+    }
+    Object.defineProperty(Mesh.prototype, "numVertices", {
+        get: function () {
+            return this.vertices.length / 3;
+        },
+        enumerable: false,
+        configurable: true
+    });
+    Object.defineProperty(Mesh.prototype, "numIndices", {
+        get: function () {
+            return this.indices.length;
+        },
+        enumerable: false,
+        configurable: true
+    });
+    return Mesh;
+}());
+module.exports.Mesh = Mesh;
 
-},{}],4:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 function main() {
    var nj = require('numjs');
    const $ = require('jquery');
@@ -676,7 +1019,7 @@ function main() {
    */
 }
 main();
-},{"./render2d":7,"./world":8,"jquery":18,"numjs":44,"simplex-noise":47}],5:[function(require,module,exports){
+},{"./render2d":8,"./world":9,"jquery":19,"numjs":45,"simplex-noise":48}],6:[function(require,module,exports){
 
 const _ = require('underscore');
 const v = require('./blockdata');
@@ -686,12 +1029,8 @@ const Material = v.Material;
 const non_solids = ['air', 'water'].map(x => Material.getMaterialByName(x));
 
 // solid materials. e.g. materials which can be walked on, but not walked through
-var solid_materials = Material.all().map(Material.getMaterialByName);
-solid_materials = _.without(solid_materials, ...non_solids);
-
-//console.log('non-solids=', non_solids);
-//console.log('solids=', solid_materials);
-
+var solid_materials = Material.all().map(Material.getMaterialByName).filter(material => !non_solids.includes(material));
+console.log(non_solids, solid_materials);
 
 const directions = {
    Forward: { x: 0, y: 1, z: 0 },   // Forward
@@ -730,11 +1069,10 @@ const block = (world, ...args) => {
 };
 
 const isSolid = (world, x, y, z) => _.contains(solid_materials, block(world, x, y, z));
-const isBelowAir = (world, x, y, z) => (block(world, x, y, z - 1) == Material.AIR);
 
 
 class Node {
-   constructor(x, y, z, walkable) {
+   constructor(x, y, z, walkable=true) {
       if (typeof x === 'undefined') throw new Error(`x=${x}`);
       if (typeof y === 'undefined') throw new Error(`y=${y}`);
       if (typeof z === 'undefined') throw new Error(`z=${z}`);
@@ -743,25 +1081,27 @@ class Node {
       this.y = y;
       this.z = z;
 
-      this.walkable = walkable;
+      this.walkable = walkable; // can this Node be stood upon
       this.gCost = Infinity; // Cost from start to this node
-      this.hCost = 0; // Heuristic cost to end node
-      this.parent = null; // For path reconstruction
+      this.hCost = 0; // Heuristic-estimated cost from this node to end node
 
-      // Connections stored by 'key' with mutual status
-      this.connections = {};
+      this.parent = null; // For path reconstruction. This is a reference to the previous Node in the path, I think
+
+      // The Nodes to which this Node has been determined to be adjacent
+      this.neighbors = {};
    }
 
    isConnectedTo(other) {
-      if (other == this) return false;
+      if (other == this) 
+         return false;
 
       const otherKey = other.key;
-      return this.connections.hasOwnProperty(otherKey);
+      return this.neighbors.hasOwnProperty(otherKey);
    }
 
    connectTo(other, mutual = false) {
       const otherKey = other.key;
-      this.connections[otherKey] = mutual ? "mutual" : "not mutual";
+      this.neighbors[otherKey] = mutual ? "mutual" : "not mutual";
 
       if (mutual) {
          other.connectTo(this, false);
@@ -773,17 +1113,12 @@ class Node {
    }
 
    get key() {
-      return `${this.x},${this.y},${this.z}`;
+      if (!this._key)
+         this._key =`${this.x},${this.y},${this.z}`;
+      return this._key;
    }
 }
 
-const toNode = (pos) => {
-   if (pos instanceof Node) {
-      return pos;
-   } else {
-      return new Node(pos.x, pos.y, pos.z, true);
-   }
-}
 
 function pkey(x, y, z) {
    return `${x},${y},${z}`;
@@ -803,13 +1138,14 @@ class AStar {
    }
 
    poskey(pos) {
+      
       return pkey(pos.x, pos.y, pos.z);
    }
 
    _nodeFor(x, y=null, z=null) {
       var k = (typeof x === 'string' && y == null && z == null) ? x : pkey(x, y, z);
 
-      if (_.has(this._nodes, k)) {
+      if (this._nodes.hasOwnProperty(k)) {
          return this._nodes[k];
       }
       else {
@@ -859,11 +1195,9 @@ class AStar {
       var blocktype_here = wd.getBlockType(x, y, z);
       var blocktype_above = wd.getBlockType(x, y, z - 1);
 
-      //console.log(`A ${Material.getMaterialName(blocktype_here)} block with ${Material.getMaterialName(blocktype_above)} directly above it`);
-
       var isCurrentBlockSolid = (blocktype_here != Material.AIR);
       if (!isCurrentBlockSolid) {
-
+         //
       }
 
       var isBlockBelowAir = (blocktype_above == Material.AIR);
@@ -879,8 +1213,6 @@ class AStar {
          return false;
       }
 
-      var a = this._nodeFor(ax, ay, az);
-      var b = this._nodeFor(bx, by, bz);
 
       if (dist3d(ax, ay, az, bx, by, bz) > 2) {
          //console.log(`(${ax},${ay},${az})  and  (${bx},${by},${bz}) are not adjacent`);
@@ -888,18 +1220,15 @@ class AStar {
       }
 
       const world = this.world;
-      // var apos = {x:ax, y:ay, z:az};
 
       var is_a_standable = this.isStandable(world, ax, ay, az);
       var is_b_standable = this.isStandable(world, bx, by, bz);
 
       if (!is_a_standable) {
-         //console.log('move is invalid because point A cannot be stood on');
          return false;
       }
 
       if (!is_b_standable) {
-         //console.log('move is invalid because point A cannot be stood on');
          return false;
       }
 
@@ -908,67 +1237,32 @@ class AStar {
 
    getNeighbors(node, grid = null) {
       const me = this;
-      if (!this.neighborCache) this.neighborCache = {};
+      // if (!this.neighborCache) this.neighborCache = {};
 
-      const nckey = this.poskey(node);
-      if (_.has(this.neighborCache, nckey)) {
-         return this.neighborCache[nckey];
-      }
+      const nckey = node.key;//this.poskey(node);
+
+      // if (_.has(this.neighborCache, nckey)) {
+      //    return this.neighborCache[nckey];
+      // }
 
       const world = this.world;
-      var x = node.x, y = node.y, z = node.z;
 
       var vmd = world.data;
       var results = [];
-      
-      const visit = (x, y, z) => {
-         const dirpt = geom.ptdiff(node, {x:x, y:y, z:z});
-         const npt = geom.ptsum(node, dirpt);
-         const neighborBlockType = this.world.data.getBlockType(npt.x, npt.y, npt.z);
-
-         var direction_name = _.findKey(directions, v => pteq(v, dirpt));
-         //console.log(`Direction: ${direction_name||JSON.stringify(dirpt)}, Block type: ${neighborBlockType}`);
-
-         if (me.isValidMove(node.x, node.y, node.z, x, y, z)) {
-            results.push(new Node(x, y, z, true));
-         }
-      }
-
-
-      // visit(x, y + 1, z);//Forward
-      // visit(x, y - 1, z);//Backward
-      // visit(x + 1, y, z);//Left
-      // visit(x - 1, y, z);//Right
-
-      // visit(x + 1, y, z - 1);//Left/Down
-      // visit(x - 1, y, z - 1);
-      // visit(x, y + 1, z - 1);
-      // visit(x, y - 1, z - 1);
-
-      // visit(x + 1, y, z + 1);
-      // visit(x - 1, y, z + 1);
-      // visit(x, y + 1, z + 1);
-      // visit(x, y - 1, z + 1);
-
+   
+      // when the motion of one's bowels are foamy, you know that's not your homie
       for (let k of _.keys(directions)) {
-         //console.log(`Checking if we can move ${k}`);
 
          var p = geom.ptsum(node, directions[k]);
          if (!vmd.isWithinBounds(p.x, p.y, p.z))
             continue;
          
-         var blockType = Material.getMaterialName(this.world.data.getBlockType(p.x, p.y, p.z));
-         //console.log(`${k}: ${blockType}`);
-         
          if (this.isValidMove(node.x, node.y, node.z, p.x, p.y, p.z)) {
-            // results.push(new Node(x, y, z, true));
             results.push(this._nodeFor(p.x, p.y, p.z));
          }
       }
 
-      console.error('There were no valid moves from that position');
-
-      this.neighborCache[nckey] = results;
+      // this.neighborCache[nckey] = results;
 
       return results;
    }
@@ -983,8 +1277,6 @@ class AStar {
 
       options = options || {};
       //! will necessitate a BlockModJournal class of some kind to implement
-      const can_modify = options.can_modify || false; // whether block placement/removal may be part of the 'path'
-      const one_way = options.one_way || false; // should one-way paths be considered. i.e. jumping down to a position we couldn't have walked to
 
       this.start_pos = start_pos;
       this.end_pos = end_pos;
@@ -1014,6 +1306,7 @@ class AStar {
 
          // If we have reached a suitable target position
          if (pteq(currentNode, end)) {
+            // reconstruct and return the path
             return this.reconstructPath(currentNode);
          }
 
@@ -1026,7 +1319,7 @@ class AStar {
 
          for (const neighbor of neighbors) {
             // skip the node if we've already checked it before
-            if (_.any(closedSet, x => pteq(x, neighbor))) {
+            if (closedSet.has(neighbor)) {
                continue;
             }
 
@@ -1041,8 +1334,6 @@ class AStar {
                   openSet.push(neighbor);
                }
             }
-
-            
          }
       }
 
@@ -1082,45 +1373,104 @@ function dist3d(ax, ay, az, bx, by, bz) {
    return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-},{"./blockdata":2,"./geometry":3,"underscore":49}],6:[function(require,module,exports){
+},{"./blockdata":2,"./geometry":4,"underscore":50}],7:[function(require,module,exports){
 
 const _ = require('underscore');
 const v = require('./blockdata');
 const Material = v.Material;
 const behavior = require('./behavior');
+const {BlockSelection} = require('./blockselection');
+
+function uuid() {
+   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+   });
+}
+
+const nn = (v) => (typeof v !== 'undefined' && v !== null);
 
 class Entity {
    //
 }
 
+/*
+TODO give Person an Inventory, so that they can hold blocks/items
+*/
 class Person extends Entity {
-   //TODO constructor
-   constructor() {
+   constructor(world) {
       super();
 
+      // the World into which this Person is being instantiated
+      this.world = world;
+
+      // the unique identifier String that will be used to store/retrieve this Person instance among others
+      this.uid = uuid();
+
+      // the position the Person is standing at
       this.pos = {x:0, y:0, z:0};
 
-      this.territory = null;
+      // the community of Persons to which this instance belongs
+      this.village = null;
+
+      // the Person (where applicable) to which this one reports
       this.master = null;
+
+      // a Set of block coordinates which this Person has laid claim to
+      this.claimed_blocks = this.world.villagerPropertyClaims[this.uid] = new BlockSelection();
+
+      // the object used to look up paths between points in the World
+      this.pathfinder = new pf.AStar(this.world);
+
+      // the object used to handle the items/blocks which are carried by this Person
+      this.inventory = new Inventory();
+
+      // the list of Task instances to be pinged at every tick
+      //? this is the current rough-draft implementation, to be changed drastically I'm sure
       this.tasks = [
-         new behavior.LaunchTask((person, n) => {
-            console.log('peen');
-            var targetPos = {
-               x: 0, 
-               y: 0, 
-               z: this.world.data.getSunlitBlockAt(0, 0)
-            };
-
-            let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
-            let walk = new behavior.WalkPath(path);
-
-            var revpath = path.slice().reverse();
-            let walk_back = walk.next_task = new behavior.WalkPath(revpath);
-            walk_back.next_task = walk;
-
-            return walk;
-         })
+         //
       ];
+
+      let launchWalkTask = new behavior.LaunchTask((person, n) => {
+         console.log('Creating and launching the WalkPath task');
+
+         var targetPos = {
+            x: 0,
+            y: 0,
+            z: this.world.data.getSunlitBlockAt(0, 0)
+         };
+
+         let path = this.calcPathTo(targetPos.x, targetPos.y, targetPos.z);
+         let walk = new behavior.WalkPath(path);
+
+         var path_reversed = path.slice().reverse();
+         let walk_back = new behavior.WalkPath(path_reversed);
+
+         // create mutual "nextness" between these two walking tasks
+         //? i.e. when one finishes, it forwards the other as the next task to be carried out
+         walk.next_task = walk_back;
+         walk_back.next_task = walk;
+
+         return walk;
+      });
+
+      this.addTask(launchWalkTask);
+   }
+
+   claimBlock(x, y, z) {
+      // eventually, we're gonna want to check that no one else has claimed the block before we decide it's ours
+      if (!this.claimed_blocks.contains(x, y, z)) {
+         this.claimed_blocks.add(x, y, z);
+      }
+   }
+
+   addTask(task, prepend=false) {
+      if (prepend) {
+         this.tasks.unshift(task);
+      }
+      else {
+         this.tasks.push(task);
+      }
    }
 
    setPos(x, y, z) {
@@ -1144,18 +1494,20 @@ class Person extends Entity {
    }
 
    calcPathTo(x, y, z, opts=null) {
-      var ast = new pf.AStar(this.world);
+      const target_pos = {x:x, y:y, z:z};
+      const start_pos = _.clone(this.pos);
 
-      return ast.findpath(_.clone(this.pos), {x:x, y:y, z:z}, null, opts);
+      return this.pathfinder.findpath(start_pos, target_pos);
    }
 
    tick(world, n) {
-      this.world = world;
+      // this.world = world;
 
       const blocks = world.data;
 
       for (let i = 0; i < this.tasks.length; i++) {
-         if (!this.tasks[i]) continue;
+         if (!this.tasks[i]) 
+            continue;
          var task = this.tasks[i];
          this.tasks[i] = task.tick(this, n);
       }
@@ -1166,7 +1518,98 @@ const pf = require('./pathfinding');
 
 
 module.exports['Person'] = Person;
-},{"./behavior":1,"./blockdata":2,"./pathfinding":5,"underscore":49}],7:[function(require,module,exports){
+
+/**
+ * The Inventory class - provides block/item storage
+ */
+class Inventory {
+   constructor() {
+      this.n_slots = 16;
+      this.slot_max_capacity = 64;
+      this.slots = new Array(this.n_slots);
+      this.equipped_index = 0;
+
+      // initialize the slots
+      for (var i = 0; i < this.slots.length; i++) {
+         // items of the same type identifier will be grouped together and considered to be the same in general
+         this.slots[i] = {
+            type: null, // the type identifier for this slot
+            count: 0, // the number of items stored in this slot
+            item: null // the object representing the contents of the slot
+         };
+      }
+   }
+
+   getSlot(q) {
+      if (typeof q === 'function') {
+         return _.find(this.slots, q);
+      }
+      else {
+         const {i, type, item} = q;
+         if (nn(i) && typeof i === 'number')
+            return this.slots[i];
+
+         var qo;
+
+         if (nn(type))
+            qo = (slot => slot.type === type);
+         else if (nn(item))
+            qo = (slot => slot.item == item);
+         else
+            throw new TypeError(`Invalid q argument given: ${q}`);
+
+         return this.getSlot(qo);
+      }
+   }
+
+   hasItem(type) {
+      //TODO
+   }
+
+   addItem(item, type=null, count=1) {
+      if (type == null || typeof type !== 'string')
+         throw new TypeError('type should be a String');
+
+      // check if we already have a slot which is occupied by the given type
+      const existingSlotOfThatType = _.find(this.slots, slot => slot.type === type);
+
+      // if we do
+      if (existingSlotOfThatType != null) {
+         // just sum the counts
+         existingSlotOfThatType.count += count;
+
+         //? maybe there's more to do, I can't think of it rn tho
+
+         return true;
+      }
+
+      // if we do not
+      else {
+         // we'll find the first empty slot
+         const firstEmptySlotIndex = _.findIndex(this.slots, slot => (slot.type == null));
+
+         // if we have any empty slots
+         if (firstEmptySlotIndex !== -1) {
+            const slot = this.slots[firstEmptySlotIndex];
+            slot.type = type;
+            slot.count += count;
+            slot.item = item;
+
+            return true;
+         }
+
+         return false;
+      }
+   }
+
+   resetSlot(slot) {
+      slot.type = slot.item = null;
+      slot.count = 0;
+   }
+}
+
+module.exports.Inventory = Inventory;
+},{"./behavior":1,"./blockdata":2,"./blockselection":3,"./pathfinding":6,"underscore":50}],8:[function(require,module,exports){
 var nj = require('numjs');
 const $ = require('jquery');
 
@@ -1174,6 +1617,8 @@ var w = require('./world');
 var Person = require('./person').Person;
 const Material = w.Material;
 const World = w.World;
+
+const {Rect3D} = require('./geometry');
 
 class Rect {
    constructor(x, y, width, height) {
@@ -1201,11 +1646,19 @@ class TopDownRenderer {
       }
 
       this.world = world;
+
       this.viewRect = new ViewRect(0, 0, world.getWidth(), world.getHeight());
 
+      // 2D matrix used to cache the highest non-air blocks
       this.topBlocks = nj.zeros([world.getWidth(), world.getHeight()]);
       this._disposalRoutines = [];
 
+      // fields related to FPS monitoring
+      this._lastSecondStart = null;
+      this._framesThisSecond = 0;
+      this._fpslog = [];
+
+      // initialize the canvas for our render loop
       this.initCanvas();
    }
 
@@ -1309,10 +1762,12 @@ class TopDownRenderer {
       try {
          // // Select the block at the clicked position
          const z = this.topBlocks.get(worldX, worldY);
-  
-         var guy = new Person();
+         
+         var guy = new Person(me.world);
          guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
+
+         guy.inventory.addItem({block_type:'sapling'}, 6, 25);
       }
       catch (error) {
          console.error(error);
@@ -1334,10 +1789,10 @@ class TopDownRenderer {
 
          const selectedBlock = vmd.getBlockType(worldX, worldY, z);
          if (selectedBlock !== 0) { // Assuming 0 represents an empty block
-            vmd.setBlock(worldX, worldY, z, Material.AIR); // Place a block of specified type
-            
+            vmd.setBlockType(worldX, worldY, z, Material.AIR); // Place a block of specified type
+
             if (z - 1 >= 0) {
-               me.topBlocks.set(worldX, worldY, z - 1);
+               me.topBlocks.set(worldX, worldY, z + 1);
             }
    
             console.log(`Removed block at (${worldX}, ${worldY})`);
@@ -1361,29 +1816,17 @@ class TopDownRenderer {
       });
    }
 
-   // Function to adjust color brightness based on depth
-   adjustColorForDepth(baseColor, z, zmin=null, zmax=null) {
-      zmax = zmax || this.world.data.depth;
-      zmin = zmin || 0;
-
-      if (typeof baseColor === 'string') {
-         baseColor = parseColor(baseColor);
-      }
-
-      let color = baseColor;
-
-      // Calculate a depth factor between 0 and 1, where Z=0 is fully bright, and maxZ is darkest
-      const depthFactor = (z - zmin) / (zmax - zmin);
-
-      // Adjust the RGB channels based on the depth factor
-      const r = Math.floor(color.r * depthFactor);
-      const g = Math.floor(color.g * depthFactor);
-      const b = Math.floor(color.b * depthFactor);
-
-      // Convert to string
-      return `rgb(${r}, ${g}, ${b})`;
-   }
-
+   /**
+    * Generates a color map for the top layer of blocks in the world.
+    * 
+    * This function iterates over the top blocks in the world data, retrieves their material type, 
+    * and assigns a color based on the material. It adjusts the brightness of the block's color 
+    * based on the relative height differences with its northern and southern neighbors, simulating 
+    * shading effects.
+    * 
+    * @returns {Array} A 2D array representing the color map where each element is the color of the block
+    *                  in RGB string format.
+    */
    getColorMap() {
       const wd = this.world.data;
       const topBlocks = this.topBlocks;
@@ -1429,15 +1872,111 @@ class TopDownRenderer {
       return colormap;
    }
 
+   renderLandscape() {
+      const wd = this.world.data;
+      const blockSize = 30;
+
+      var offscreenCanvas;
+      var offscreenCtx;
+
+      if (!this._landscapeCanvas) {
+         try {
+            offscreenCanvas = new OffscreenCanvas(wd.width * blockSize, wd.height * blockSize);
+            offscreenCtx = offscreenCanvas.getContext('2d');
+         }
+         catch (error) {
+            offscreenCanvas.width = wd.width * blockSize;
+            offscreenCanvas.height = wd.height * blockSize;
+            offscreenCtx = offscreenCanvas.getContext('2d');
+         }
+
+         this._landscapeCanvas = offscreenCanvas;
+         this._landscapeCtx = offscreenCtx;
+      }
+      else {
+         offscreenCanvas = this._landscapeCanvas;
+         offscreenCtx = this._landscapeCtx;
+      }
+
+      const colorMap = this.getColorMap();
+      
+      // once practical, only redraw when a change has been made to the world
+      for (let x = 0; x < wd.width; x++) {
+         for (let y = 0; y < wd.height; y++) {
+            let z = this.topBlocks.get(x, y);
+            let material = wd.getBlockType(x, y, z);
+
+            // let cell_color = colorMap[x][y];
+            let cell_color = Material.getColorOf(material);
+            
+            offscreenCtx.fillStyle = cell_color;
+            offscreenCtx.fillRect(x * blockSize, y * blockSize, blockSize, blockSize);
+         }
+      }
+         
+      // return offscreenCanvas;
+      var result = {
+         image: offscreenCanvas,
+         blockSize: blockSize
+      };
+
+      console.log(result);
+
+      return result;
+   }
+
+   drawLandscapeToGlobalCanvas() {
+      // We have our landscape image, but now we need to draw it onto the global canvas that we're rendering to.
+      // To do this, we need to:
+      // 1. Scale the landscape image according to the user's zoom level.
+      // 2. Center the landscape image horizontally and vertically on the canvas.
+      // 3. Draw the landscape image onto the canvas at the calculated position and size.
+
+      const c = this.context;
+      let landscape = this.renderLandscape();
+
+      let globalBlockSize = (3 * this.viewRect.zoomFactor);
+      let localBlockSize = 30;
+      let globalViewRect = this.viewRect;
+      
+      let cropX = (globalViewRect.x * localBlockSize);
+      let cropY = (globalViewRect.y * localBlockSize);
+      
+      let img = landscape.image;
+
+      c.drawImage(
+         img, 
+         0, 0, img.width, img.height, 
+         globalViewRect.x, globalViewRect.y, (img.width / localBlockSize) * globalBlockSize, (img.height / localBlockSize) * globalBlockSize
+      );
+   }
+
    sample_voxels_topdown() {
+      // do some frames-per-second calculations
+      let now = performance.now();
+      if (this._lastSecondStart == null || (now - this._lastSecondStart >= 1000)) {
+         if (this._lastSecondStart != null) {
+            this._fpslog.push(this._framesThisSecond);
+         }
+
+         this._lastSecondStart = now;
+         this._framesThisSecond = 0;
+      }
+
       let world_shape = this.world.data.shape;
       let vmd = this.world.data;
       let width = vmd.width, height = vmd.height, depth = vmd.depth;
 
       let c = this.context;
+
+      // erase the canvas so that it can be repainted
       c.clearRect(0, 0, this.canvasElem.width, this.canvasElem.height);
 
-      var blockSize = 3;
+      // self explanatory
+      // this.drawLandscapeToGlobalCanvas();
+
+      // render all other items onto c
+      let blockSize = 3;
       blockSize *= (this.viewRect.zoomFactor);
 
       this.world.tick(1);
@@ -1475,10 +2014,14 @@ class TopDownRenderer {
       }
 
       // Draw little circles to represent the Persons in `this.world.entities`
-      this.world.entities.forEach(entity => {
+      for (var i = 0; i < this.world.entities.length; i++) {
+         let entity = this.world.entities[i];
+
+         // calculate where to put the circle
          let displX = (entity.pos.x * blockSize) + this.viewRect.x;
          let diplY = (entity.pos.y * blockSize) + this.viewRect.y;
          
+         // draw the circle
          c.beginPath();
          c.arc(displX + blockSize / 2, diplY + blockSize / 2, blockSize / 2, 0, 2 * Math.PI);
          c.fillStyle = 'red'; // Example color for the person
@@ -1486,7 +2029,8 @@ class TopDownRenderer {
 
          // Draw a sequence of lines to visualize the path of the person
          if (entity._activePath) {
-            c.strokeStyle = 'blue'; // Example color for the path
+            // Example color for the path
+            c.strokeStyle = 'blue'; 
             c.lineWidth = 2;
 
             c.beginPath();
@@ -1499,7 +2043,32 @@ class TopDownRenderer {
             }
             c.stroke();
          }
-      });
+
+         // Draw an outline around the boundaries of this Person's claimed_blocks
+         if (entity.claimed_blocks && entity.claimed_blocks.length > 0) {
+            c.strokeStyle = 'black'; // Example color for the outline
+            c.lineWidth = 0.75;
+
+            c.beginPath();
+            entity.claimed_blocks.forEach(block => {
+               let displX = (block.x * blockSize) + this.viewRect.x;
+               let diplY = (block.y * blockSize) + this.viewRect.y;
+               c.rect(displX, diplY, blockSize, blockSize);
+            });
+            c.stroke();
+         }
+      }
+
+      // draw the frames-per-second to top-right corner of the canvas
+      if (this._fpslog.length > 1) {
+         c.font = '12px Arial';
+         c.fillStyle = 'black';
+         c.textAlign = 'right';
+         c.fillText("FPS: " + this._fpslog[this._fpslog.length - 1], this.canvasElem.width - 30, 24);
+      }
+
+      // increment the frame-count
+      this._framesThisSecond++;
    }
 }
 
@@ -1564,7 +2133,7 @@ function parseColor(baseColor) {
 
 module.exports['TopDownRenderer'] = TopDownRenderer;
 // module.exports
-},{"./person":6,"./world":8,"jquery":18,"numjs":44}],8:[function(require,module,exports){
+},{"./geometry":4,"./person":7,"./world":9,"jquery":19,"numjs":45}],9:[function(require,module,exports){
 
 var nj = require('numjs');
 var _ = require('underscore');
@@ -1575,6 +2144,9 @@ var BlockData = vd.BlockData;
 var wd = require('./blockdata');
 var gen = require('./worldgen');
 
+const geom = require('./geometry');
+// import {BlockSelection} from './blockselection';
+const {BlockSelection} = require('./blockselection');
 
 class World {
    constructor(config) {
@@ -1594,6 +2166,10 @@ class World {
       this.entities = new Array();
       
       //TODO set all blocks to grass
+
+
+      // Mapping from villager uids to the BlockSelections that comprise their respective property claims
+      this.villagerPropertyClaims = {};
    }
 
    getBlock(x, y, z) {
@@ -1706,7 +2282,7 @@ function test_world() {
    
 }
 
-},{"./blockdata":2,"./worldgen":9,"numjs":44,"underscore":49}],9:[function(require,module,exports){
+},{"./blockdata":2,"./blockselection":3,"./geometry":4,"./worldgen":10,"numjs":45,"underscore":50}],10:[function(require,module,exports){
 
 var v = require('./blockdata');
 var Material = v.Material;
@@ -1761,7 +2337,7 @@ function grow_tree(world, x, y, z) {
    }
 }
 module.exports['grow_tree'] = grow_tree;
-},{"./blockdata":2}],10:[function(require,module,exports){
+},{"./blockdata":2}],11:[function(require,module,exports){
 /**
  * Bit twiddling hacks for JavaScript.
  *
@@ -1967,7 +2543,7 @@ exports.nextCombination = function(v) {
 }
 
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 "use strict"
 
 var createThunk = require("./lib/thunk.js")
@@ -2078,7 +2654,7 @@ function compileCwise(user_args) {
 
 module.exports = compileCwise
 
-},{"./lib/thunk.js":13}],12:[function(require,module,exports){
+},{"./lib/thunk.js":14}],13:[function(require,module,exports){
 "use strict"
 
 var uniq = require("uniq")
@@ -2438,7 +3014,7 @@ function generateCWiseOp(proc, typesig) {
 }
 module.exports = generateCWiseOp
 
-},{"uniq":50}],13:[function(require,module,exports){
+},{"uniq":51}],14:[function(require,module,exports){
 "use strict"
 
 // The function below is called when constructing a cwise function object, and does the following:
@@ -2526,9 +3102,9 @@ function createThunk(proc) {
 
 module.exports = createThunk
 
-},{"./compile.js":12}],14:[function(require,module,exports){
+},{"./compile.js":13}],15:[function(require,module,exports){
 module.exports = require("cwise-compiler")
-},{"cwise-compiler":11}],15:[function(require,module,exports){
+},{"cwise-compiler":12}],16:[function(require,module,exports){
 "use strict"
 
 function dupe_array(count, value, i) {
@@ -2578,7 +3154,7 @@ function dupe(count, value) {
 }
 
 module.exports = dupe
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 "use strict"
 
 function iota(n) {
@@ -2590,7 +3166,7 @@ function iota(n) {
 }
 
 module.exports = iota
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -2613,7 +3189,7 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.7.1
  * https://jquery.com/
@@ -13331,7 +13907,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 (function (global){(function (){
 /**
  * @license
@@ -30544,7 +31120,7 @@ return jQuery;
 }.call(this));
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 'use strict'
 
 var ops = require('ndarray-ops')
@@ -30627,7 +31203,7 @@ function ndfft(dir, x, y) {
 }
 
 module.exports = ndfft
-},{"./lib/fft-matrix.js":21,"ndarray":25,"ndarray-ops":24,"typedarray-pool":48}],21:[function(require,module,exports){
+},{"./lib/fft-matrix.js":22,"ndarray":26,"ndarray-ops":25,"typedarray-pool":49}],22:[function(require,module,exports){
 var bits = require('bit-twiddle')
 
 function fft(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
@@ -30846,7 +31422,7 @@ function fftBluestein(dir, nrows, ncols, buffer, x_ptr, y_ptr, scratch_ptr) {
   }
 }
 
-},{"bit-twiddle":10}],22:[function(require,module,exports){
+},{"bit-twiddle":11}],23:[function(require,module,exports){
 "use strict"
 
 module.exports = matrixProduct
@@ -30909,7 +31485,7 @@ function matrixProduct(out, a, b, alpha, beta) {
   }
   return proc(out, a, b, alpha, beta)
 }
-},{"./lib/planner.js":23}],23:[function(require,module,exports){
+},{"./lib/planner.js":24}],24:[function(require,module,exports){
 "use strict"
 
 module.exports = generateMatrixProduct
@@ -31189,7 +31765,7 @@ function generateMatrixProduct(outType, aType, bType, useAlpha, useBeta) {
   var proc = new Function(code.join(""))
   return proc()
 }
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 "use strict"
 
 var compile = require("cwise-compiler")
@@ -31652,7 +32228,7 @@ exports.equals = compile({
 
 
 
-},{"cwise-compiler":11}],25:[function(require,module,exports){
+},{"cwise-compiler":12}],26:[function(require,module,exports){
 var iota = require("iota-array")
 var isBuffer = require("is-buffer")
 
@@ -32003,7 +32579,7 @@ function wrappedNDArrayCtor(data, shape, stride, offset) {
 
 module.exports = wrappedNDArrayCtor
 
-},{"iota-array":16,"is-buffer":17}],26:[function(require,module,exports){
+},{"iota-array":17,"is-buffer":18}],27:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -32011,7 +32587,7 @@ module.exports = {
   nFloatingValues: 5
 };
 
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -32026,7 +32602,7 @@ module.exports = {
   array: Array
 };
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -32047,7 +32623,7 @@ module.exports = {
   }
 };
 
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 'use strict';
 
 module.exports = function areaSum (h0, w0, H, W, SAT) {
@@ -32061,7 +32637,7 @@ module.exports = function areaSum (h0, w0, H, W, SAT) {
         : -SAT.selection.get(y1, x0) + SAT.selection.get(y1, x1);
 };
 
-},{}],30:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 'use strict';
 
 var areaSum = require('./area-sum');
@@ -32070,7 +32646,7 @@ module.exports = function areaValue (h0, w0, H, W, SAT) {
   return areaSum(h0, w0, H, W, SAT) / (H * W);
 };
 
-},{"./area-sum":29}],31:[function(require,module,exports){
+},{"./area-sum":30}],32:[function(require,module,exports){
 (function (__dirname){(function (){
 'use strict';
 var path = require('path');
@@ -32142,7 +32718,7 @@ Object.defineProperty(exports, 'moon', {
 module.exports = exports;
 
 }).call(this)}).call(this,"/node_modules/numjs/src/images")
-},{"./read":35,"path":83}],32:[function(require,module,exports){
+},{"./read":36,"path":84}],33:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -32151,7 +32727,7 @@ module.exports = function flipImage (img) {
   return new NdArray(img.selection.step(null, -1));
 };
 
-},{"../ndarray":45}],33:[function(require,module,exports){
+},{"../ndarray":46}],34:[function(require,module,exports){
 'use strict';
 
 /**
@@ -32177,7 +32753,7 @@ module.exports = {
   flip: require('./flip')
 };
 
-},{"./area-sum":29,"./area-value":30,"./data":31,"./flip":32,"./read":35,"./resize":36,"./rgb2gray":37,"./sat":38,"./save":39,"./scharr":40,"./sobel":41,"./ssat":42}],34:[function(require,module,exports){
+},{"./area-sum":30,"./area-value":31,"./data":32,"./flip":33,"./read":36,"./resize":37,"./rgb2gray":38,"./sat":39,"./save":40,"./scharr":41,"./sobel":42,"./ssat":43}],35:[function(require,module,exports){
 'use strict';
 
 
@@ -32201,7 +32777,7 @@ module.exports = function isGrayscaleImage (arr) {
   return false;
 };
 
-},{"../ndarray":45,"cwise/lib/wrapper":14}],35:[function(require,module,exports){
+},{"../ndarray":46,"cwise/lib/wrapper":15}],36:[function(require,module,exports){
 'use strict';
 
 /* global HTMLCanvasElement */
@@ -32255,7 +32831,7 @@ function processImg (img) {
   return new NdArray(hxw);
 }
 
-},{"../errors":28,"../ndarray":45,"./is-grayscale":34,"ndarray":25}],36:[function(require,module,exports){
+},{"../errors":29,"../ndarray":46,"./is-grayscale":35,"ndarray":26}],37:[function(require,module,exports){
 'use strict';
 
 var _ = require('./utils');
@@ -32300,7 +32876,7 @@ module.exports = function resizeImageDom (img, height, width) {
   return new NdArray(hxw);
 };
 
-},{"../ndarray":45,"./utils":43,"ndarray":25}],37:[function(require,module,exports){
+},{"../ndarray":46,"./utils":44,"ndarray":26}],38:[function(require,module,exports){
 'use strict';
 
 
@@ -32336,7 +32912,7 @@ module.exports = function rgb2gray (img) {
   return out;
 };
 
-},{"../ndarray":45,"../utils":46,"cwise/lib/wrapper":14}],38:[function(require,module,exports){
+},{"../ndarray":46,"../utils":47,"cwise/lib/wrapper":15}],39:[function(require,module,exports){
 'use strict';
 
 
@@ -32362,7 +32938,7 @@ module.exports = function computeSumAreaTable (img) {
   return out;
 };
 
-},{"../ndarray":45,"./rgb2gray":37,"cwise/lib/wrapper":14}],39:[function(require,module,exports){
+},{"../ndarray":46,"./rgb2gray":38,"cwise/lib/wrapper":15}],40:[function(require,module,exports){
 'use strict';
 
 var _ = require('./utils');
@@ -32395,7 +32971,7 @@ module.exports = function saveImageDom (img, dest) {
   }
 };
 
-},{"../errors":28,"./utils":43}],40:[function(require,module,exports){
+},{"../errors":29,"./utils":44}],41:[function(require,module,exports){
 'use strict';
 
 
@@ -32434,7 +33010,7 @@ module.exports = function computeScharr (img) {
   return out.divide(16 * Math.sqrt(2), false);
 };
 
-},{"../ndarray":45,"../utils":46,"./rgb2gray":37,"cwise/lib/wrapper":14,"ndarray-ops":24}],41:[function(require,module,exports){
+},{"../ndarray":46,"../utils":47,"./rgb2gray":38,"cwise/lib/wrapper":15,"ndarray-ops":25}],42:[function(require,module,exports){
 'use strict';
 
 
@@ -32443,7 +33019,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=_inline_31_arg2_+2*_inline_31_arg3_+_inline_31_arg4_-_inline_31_arg7_-2*_inline_31_arg8_-_inline_31_arg9_,_inline_31_s=_inline_31_arg2_-_inline_31_arg4_+2*_inline_31_arg5_-2*_inline_31_arg6_+_inline_31_arg7_-_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_28_q=_inline_28_arg2_+2*_inline_28_arg3_+_inline_28_arg4_-_inline_28_arg7_-2*_inline_28_arg8_-_inline_28_arg9_,_inline_28_s=_inline_28_arg2_-_inline_28_arg4_+2*_inline_28_arg5_-2*_inline_28_arg6_+_inline_28_arg7_-_inline_28_arg9_;_inline_28_arg0_=Math.sqrt(_inline_28_s*_inline_28_s+_inline_28_q*_inline_28_q)}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_28_q","_inline_28_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
@@ -32475,14 +33051,14 @@ module.exports = function computeSobel (img) {
   return out.divide(4 * Math.sqrt(2), false);
 };
 
-},{"../ndarray":45,"../utils":46,"./rgb2gray":37,"cwise/lib/wrapper":14,"ndarray-ops":24}],42:[function(require,module,exports){
+},{"../ndarray":46,"../utils":47,"./rgb2gray":38,"cwise/lib/wrapper":15,"ndarray-ops":25}],43:[function(require,module,exports){
 'use strict';
 
 
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_28_arg0_=0!==_inline_28_arg2_[0]&&0!==_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_+_inline_28_arg5_-_inline_28_arg3_:0===_inline_28_arg2_[0]&&0===_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_:0===_inline_28_arg2_[0]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg5_:_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_31_arg0_=0!==_inline_31_arg2_[0]&&0!==_inline_31_arg2_[1]?_inline_31_arg1_*_inline_31_arg1_+_inline_31_arg4_+_inline_31_arg5_-_inline_31_arg3_:0===_inline_31_arg2_[0]&&0===_inline_31_arg2_[1]?_inline_31_arg1_*_inline_31_arg1_:0===_inline_31_arg2_[0]?_inline_31_arg1_*_inline_31_arg1_+_inline_31_arg5_:_inline_31_arg1_*_inline_31_arg1_+_inline_31_arg4_}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image
@@ -32502,7 +33078,7 @@ module.exports = function computeSquaredSumAreaTable (img) {
   return out;
 };
 
-},{"../ndarray":45,"./rgb2gray":37,"cwise/lib/wrapper":14}],43:[function(require,module,exports){
+},{"../ndarray":46,"./rgb2gray":38,"cwise/lib/wrapper":15}],44:[function(require,module,exports){
 'use strict';
 
 var NdArray = require('../ndarray');
@@ -32621,7 +33197,7 @@ module.exports.setRawData = function setRawData (array, data) {
   }
 };
 
-},{"../ndarray":45}],44:[function(require,module,exports){
+},{"../ndarray":46}],45:[function(require,module,exports){
 'use strict';
 
 var ndarray = require('ndarray');
@@ -33464,7 +34040,7 @@ module.exports = {
   images: require('./images')
 };
 
-},{"./config":26,"./dtypes":27,"./errors":28,"./images":33,"./ndarray":45,"./utils":46,"cwise/lib/wrapper":14,"ndarray":25,"ndarray-fft":20,"ndarray-ops":24}],45:[function(require,module,exports){
+},{"./config":27,"./dtypes":28,"./errors":29,"./images":34,"./ndarray":46,"./utils":47,"cwise/lib/wrapper":15,"ndarray":26,"ndarray-fft":21,"ndarray-ops":25}],46:[function(require,module,exports){
 'use strict';
 
 var ndarray = require('ndarray');
@@ -34530,7 +35106,7 @@ function formatNumber (v) {
   return String(Number((v || 0).toFixed(CONF.nFloatingValues)));
 }
 
-},{"./config":26,"./errors":28,"./utils":46,"cwise/lib/wrapper":14,"ndarray":25,"ndarray-fft":20,"ndarray-gemm":22,"ndarray-ops":24,"typedarray-pool":48}],46:[function(require,module,exports){
+},{"./config":27,"./errors":29,"./utils":47,"cwise/lib/wrapper":15,"ndarray":26,"ndarray-fft":21,"ndarray-gemm":23,"ndarray-ops":25,"typedarray-pool":49}],47:[function(require,module,exports){
 'use strict';
 var DTYPES = require('./dtypes');
 var _ = require('lodash');
@@ -34623,7 +35199,7 @@ module.exports = {
   defaults: _.defaults
 };
 
-},{"./dtypes":27,"lodash":19}],47:[function(require,module,exports){
+},{"./dtypes":28,"lodash":20}],48:[function(require,module,exports){
 "use strict";
 /*
  * A fast javascript implementation of simplex noise by Jonas Wagner
@@ -35097,7 +35673,7 @@ function buildPermutationTable(random) {
 }
 exports.buildPermutationTable = buildPermutationTable;
 
-},{}],48:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 (function (global){(function (){
 'use strict'
 
@@ -35352,7 +35928,7 @@ exports.clearCache = function clearCache() {
 }
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"bit-twiddle":10,"buffer":56,"dup":15}],49:[function(require,module,exports){
+},{"bit-twiddle":11,"buffer":57,"dup":16}],50:[function(require,module,exports){
 (function (global){(function (){
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
@@ -37403,7 +37979,7 @@ exports.clearCache = function clearCache() {
 
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 "use strict"
 
 function unique_pred(list, compare) {
@@ -37462,7 +38038,7 @@ function unique(list, compare, sorted) {
 
 module.exports = unique
 
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 (function (global){(function (){
 'use strict';
 
@@ -37972,7 +38548,7 @@ var objectKeys = Object.keys || function (obj) {
 };
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"object.assign/polyfill":82,"util/":54}],52:[function(require,module,exports){
+},{"object.assign/polyfill":83,"util/":55}],53:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -37997,14 +38573,14 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],54:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 (function (process,global){(function (){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -38594,7 +39170,7 @@ function hasOwnProperty(obj, prop) {
 }
 
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":53,"_process":84,"inherits":52}],55:[function(require,module,exports){
+},{"./support/isBuffer":54,"_process":85,"inherits":53}],56:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -38746,7 +39322,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],56:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -40527,7 +41103,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":55,"buffer":56,"ieee754":77}],57:[function(require,module,exports){
+},{"base64-js":56,"buffer":57,"ieee754":78}],58:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -40544,7 +41120,7 @@ module.exports = function callBoundIntrinsic(name, allowMissing) {
 	return intrinsic;
 };
 
-},{"./":58,"get-intrinsic":70}],58:[function(require,module,exports){
+},{"./":59,"get-intrinsic":71}],59:[function(require,module,exports){
 'use strict';
 
 var bind = require('function-bind');
@@ -40581,7 +41157,7 @@ if ($defineProperty) {
 	module.exports.apply = applyBind;
 }
 
-},{"es-define-property":60,"es-errors/type":66,"function-bind":69,"get-intrinsic":70,"set-function-length":85}],59:[function(require,module,exports){
+},{"es-define-property":61,"es-errors/type":67,"function-bind":70,"get-intrinsic":71,"set-function-length":86}],60:[function(require,module,exports){
 'use strict';
 
 var $defineProperty = require('es-define-property');
@@ -40639,7 +41215,7 @@ module.exports = function defineDataProperty(
 	}
 };
 
-},{"es-define-property":60,"es-errors/syntax":65,"es-errors/type":66,"gopd":71}],60:[function(require,module,exports){
+},{"es-define-property":61,"es-errors/syntax":66,"es-errors/type":67,"gopd":72}],61:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -40657,49 +41233,49 @@ if ($defineProperty) {
 
 module.exports = $defineProperty;
 
-},{"get-intrinsic":70}],61:[function(require,module,exports){
+},{"get-intrinsic":71}],62:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./eval')} */
 module.exports = EvalError;
 
-},{}],62:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 'use strict';
 
 /** @type {import('.')} */
 module.exports = Error;
 
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./range')} */
 module.exports = RangeError;
 
-},{}],64:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./ref')} */
 module.exports = ReferenceError;
 
-},{}],65:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./syntax')} */
 module.exports = SyntaxError;
 
-},{}],66:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./type')} */
 module.exports = TypeError;
 
-},{}],67:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 'use strict';
 
 /** @type {import('./uri')} */
 module.exports = URIError;
 
-},{}],68:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 'use strict';
 
 /* eslint no-invalid-this: 1 */
@@ -40785,14 +41361,14 @@ module.exports = function bind(that) {
     return bound;
 };
 
-},{}],69:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 'use strict';
 
 var implementation = require('./implementation');
 
 module.exports = Function.prototype.bind || implementation;
 
-},{"./implementation":68}],70:[function(require,module,exports){
+},{"./implementation":69}],71:[function(require,module,exports){
 'use strict';
 
 var undefined;
@@ -41153,7 +41729,7 @@ module.exports = function GetIntrinsic(name, allowMissing) {
 	return value;
 };
 
-},{"es-errors":62,"es-errors/eval":61,"es-errors/range":63,"es-errors/ref":64,"es-errors/syntax":65,"es-errors/type":66,"es-errors/uri":67,"function-bind":69,"has-proto":73,"has-symbols":74,"hasown":76}],71:[function(require,module,exports){
+},{"es-errors":63,"es-errors/eval":62,"es-errors/range":64,"es-errors/ref":65,"es-errors/syntax":66,"es-errors/type":67,"es-errors/uri":68,"function-bind":70,"has-proto":74,"has-symbols":75,"hasown":77}],72:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -41171,7 +41747,7 @@ if ($gOPD) {
 
 module.exports = $gOPD;
 
-},{"get-intrinsic":70}],72:[function(require,module,exports){
+},{"get-intrinsic":71}],73:[function(require,module,exports){
 'use strict';
 
 var $defineProperty = require('es-define-property');
@@ -41195,7 +41771,7 @@ hasPropertyDescriptors.hasArrayLengthDefineBug = function hasArrayLengthDefineBu
 
 module.exports = hasPropertyDescriptors;
 
-},{"es-define-property":60}],73:[function(require,module,exports){
+},{"es-define-property":61}],74:[function(require,module,exports){
 'use strict';
 
 var test = {
@@ -41212,7 +41788,7 @@ module.exports = function hasProto() {
 		&& !(test instanceof $Object);
 };
 
-},{}],74:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 'use strict';
 
 var origSymbol = typeof Symbol !== 'undefined' && Symbol;
@@ -41227,7 +41803,7 @@ module.exports = function hasNativeSymbols() {
 	return hasSymbolSham();
 };
 
-},{"./shams":75}],75:[function(require,module,exports){
+},{"./shams":76}],76:[function(require,module,exports){
 'use strict';
 
 /* eslint complexity: [2, 18], max-statements: [2, 33] */
@@ -41271,7 +41847,7 @@ module.exports = function hasSymbols() {
 	return true;
 };
 
-},{}],76:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 'use strict';
 
 var call = Function.prototype.call;
@@ -41281,7 +41857,7 @@ var bind = require('function-bind');
 /** @type {import('.')} */
 module.exports = bind.call(call, $hasOwn);
 
-},{"function-bind":69}],77:[function(require,module,exports){
+},{"function-bind":70}],78:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -41368,7 +41944,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],78:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 'use strict';
 
 var keysShim;
@@ -41492,7 +42068,7 @@ if (!Object.keys) {
 }
 module.exports = keysShim;
 
-},{"./isArguments":80}],79:[function(require,module,exports){
+},{"./isArguments":81}],80:[function(require,module,exports){
 'use strict';
 
 var slice = Array.prototype.slice;
@@ -41526,7 +42102,7 @@ keysShim.shim = function shimObjectKeys() {
 
 module.exports = keysShim;
 
-},{"./implementation":78,"./isArguments":80}],80:[function(require,module,exports){
+},{"./implementation":79,"./isArguments":81}],81:[function(require,module,exports){
 'use strict';
 
 var toStr = Object.prototype.toString;
@@ -41545,7 +42121,7 @@ module.exports = function isArguments(value) {
 	return isArgs;
 };
 
-},{}],81:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 'use strict';
 
 // modified from https://github.com/es-shims/es6-shim
@@ -41593,7 +42169,7 @@ module.exports = function assign(target, source1) {
 	return to; // step 4
 };
 
-},{"call-bind/callBound":57,"has-symbols/shams":75,"object-keys":79}],82:[function(require,module,exports){
+},{"call-bind/callBound":58,"has-symbols/shams":76,"object-keys":80}],83:[function(require,module,exports){
 'use strict';
 
 var implementation = require('./implementation');
@@ -41650,7 +42226,7 @@ module.exports = function getPolyfill() {
 	return Object.assign;
 };
 
-},{"./implementation":81}],83:[function(require,module,exports){
+},{"./implementation":82}],84:[function(require,module,exports){
 (function (process){(function (){
 // 'path' module extracted from Node.js v8.11.1 (only the posix part)
 // transplited with Babel
@@ -42183,7 +42759,7 @@ posix.posix = posix;
 module.exports = posix;
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":84}],84:[function(require,module,exports){
+},{"_process":85}],85:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -42369,7 +42945,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],85:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -42413,4 +42989,4 @@ module.exports = function setFunctionLength(fn, length) {
 	return fn;
 };
 
-},{"define-data-property":59,"es-errors/type":66,"get-intrinsic":70,"gopd":71,"has-property-descriptors":72}]},{},[4]);
+},{"define-data-property":60,"es-errors/type":67,"get-intrinsic":71,"gopd":72,"has-property-descriptors":73}]},{},[5]);
