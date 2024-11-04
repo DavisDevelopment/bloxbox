@@ -155,7 +155,9 @@ class TopDownRenderer {
          guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
 
-         guy.inventory.addItem({block_type:'sapling'}, 6, 25);
+         guy.inventory.addItem({block_type:'sapling'}, 'sapling', 25);
+
+         guy.buildHome();
       }
       catch (error) {
          console.error(error);

@@ -6,6 +6,10 @@ const Material = v.Material;
 const pf = require('./pathfinding.js');
 const pteq = pf.pteq;
 
+const geom = require('./geometry');
+const {BlockSelection} = require('./blockselection.js');
+const assert = require('assert');
+
 class Task {
    constructor() {
       this.has_started = false;
@@ -39,15 +43,31 @@ class Task {
 }
 
 class WalkPath extends Task {
-   constructor(mvmt_path) {
+   constructor(o) {
+      const {path, person, target_position} = o;
+      
+      if (!path && (person == null || target_position == null)) {
+         throw new Error('Either path or person AND target_position options must be provided');
+      }
+
       super();
 
-      this.path = mvmt_path;
+      this.path = path;
+      this.person = person;
+      this.target_position = target_position;
       this.current_node = 0;
    }
 
    tick(person, n) {
       super.tick(person);
+      console.log('WalkPath.tick');
+
+      if (!this.person) this.person = person;
+      if (!this.path && this.target_position != null) {
+         var {x,y,z} = this.target_position;
+         var path = this.person.calcPathTo(x, y, z);
+         this.path = path;
+      }
 
       // reset and proceed to the next task when we've reached the end of the path
       if (this.path.length == 0 || pteq(person.pos, this.path[this.path.length - 1])) {
@@ -87,6 +107,9 @@ class MineBlock extends Task {
    }
 
    tick(person, n) {
+      super.tick(person);
+      console.log('MineBlock.tick');
+
       const { x, y, z } = this.targetBlock;
 
       // Calculate the distance between the person and the target block
@@ -99,7 +122,7 @@ class MineBlock extends Task {
       // if the person is within range of the block
       if (distance <= 5) {
          // first, get some info about the block being taken
-         const oldBlockType = person.world.getBlockType(x, y, z);
+         const oldBlockType = person.world.data.getBlockType(x, y, z);
          const blockItemType = Material.getMaterialName(oldBlockType);
          const blockItemCount = 1;
 
@@ -108,20 +131,21 @@ class MineBlock extends Task {
          };
 
          // now, remove that block from the world, replacing it with air
-         person.world.setBlockType(x, y, z, Material.AIR);
+         person.world.data.setBlockType(x, y, z, Material.AIR);
 
          // add the block into the person's inventory
          person.inventory.addItem(blockItemObject, blockItemType, blockItemCount);
 
          this.complete();
+
          return this.next_task;
       }
 
       // otherwise
       else {
          // walk there
-         const path = person.calcPathTo(x, y, z);
-         let walk = new WalkPath(path);
+         // const path = person.calcPathTo(x, y, z);
+         let walk = new WalkPath({target_position:this.targetBlock, person:person});
 
          // and then return to this task when we have completed that walk
          walk.next_task = this;
@@ -143,6 +167,8 @@ class PlaceBlock extends Task {
    }
 
    tick(person, n) {
+      console.log('PlaceBlock.tick');
+
       const {x, y, z} = this.targetPosition;
       
       const distance = Math.sqrt(
@@ -154,7 +180,7 @@ class PlaceBlock extends Task {
       // if the person is within range of the block
       if (distance <= 5) {
          // first, get some info about the block being taken
-         const oldBlockType = person.world.getBlockType(x, y, z);
+         const oldBlockType = person.world.data.getBlockType(x, y, z);
          const blockItemType = Material.getMaterialName(oldBlockType);
          const blockItemCount = 1;
 
@@ -167,7 +193,7 @@ class PlaceBlock extends Task {
             }
 
             // set the block in the world
-            person.world.setBlockType(x, y, z, this.blockToPlace);
+            person.world.data.setBlockType(x, y, z, this.blockToPlace);
 
             // complete this task
             this.complete();
@@ -178,8 +204,8 @@ class PlaceBlock extends Task {
       // otherwise
       else {
          // walk there
-         const path = person.calcPathTo(x, y, z);
-         let walk = new WalkPath(path);
+         // const path = person.calcPathTo(x, y, z);
+         let walk = new WalkPath({target_position:this.targetPosition, person:person});
 
          // and then return to this task when we have completed that walk
          walk.next_task = this;
@@ -188,7 +214,271 @@ class PlaceBlock extends Task {
    }
 }
 module.exports.PlaceBlock = PlaceBlock;
-},{"./blockdata":2,"./pathfinding.js":6,"underscore":50}],2:[function(require,module,exports){
+
+
+
+/*
+
+*/
+class BuildHome extends Task {
+   constructor(person, targetPosition) {
+      super();
+      this.person = person;
+      this.targetPosition = targetPosition;
+      this.subtasks = null;
+      this.currentTask = null;
+
+      this.build_plan();
+   }
+
+   build_plan() {
+      // the most basic possible home is a 5x5x4 rectangle made of grass blocks, so in order to build one, we'll need to:
+      // 1) calculate the number of grass blocks needed to fill the outermost layer of the planned rectangle
+      const width = 5;
+      const height = 5;
+      const depth = 4;
+      const blocksNeeded = (width * height * depth) - (width - 2) * (height - 2) * (depth - 2);
+      const wd = this.person.world.data;
+      // const 
+
+      const buildSiteRect = new geom.Rect3D(
+         this.targetPosition.x, this.targetPosition.y, this.targetPosition.z,
+         depth, width, height
+      );
+
+      const buildSiteSel = new BlockSelection();
+      buildSiteSel.addRect3D(buildSiteRect);
+
+      let plan_steps = [];
+      
+      // 2) check if we have at least that number of grass blocks
+      const grassCount = this.person.inventory.getCount(Material.GRASS);
+      if (grassCount < blocksNeeded) {
+         // 2.1) if we do not, go and mine the remaining required number of grass blocks somewhere nearby
+         
+         // remaining required number of blocks
+         const missingBlocks = blocksNeeded - grassCount;
+
+         // list of coordinates of grass blocks nearby
+         const buildingMaterialLocations = this.person.findNearestBlock(missingBlocks, Material.GRASS, buildSiteSel);
+
+         // create a MineBlock task for each of the building material locations
+         for (var i = 0; i < buildingMaterialLocations.length; i++) {
+            const { x, y, z } = buildingMaterialLocations[i];
+            plan_steps.push(new MineBlock({ x, y, z }));
+         }
+      }
+
+      // 3) mine all non-air blocks inside our build site
+      let r = buildSiteRect;
+      for (var x = r.x+1; x < r.width - 1; x++) {
+         for (var y = r.y+1; y < r.height - 1; y++) {
+            for (var z = r.z+1; z < r.length - 1; z++) {
+               if (wd.getBlockType(x, y, z) !== Material.AIR) {
+                  plan_steps.push(new MineBlock({x, y, z}));
+               }
+            }
+         }
+      }
+
+         
+      // 4) place our grass blocks around the outer layer of our selected rectangle
+      
+      //   iterate over every point on the build site
+      for (const [x, y, z] of buildSiteSel.all()) {
+         // if these coordinates are along the outer edge of the build site rectangle
+         if (x === buildSiteRect.x || y === buildSiteRect.y || z === buildSiteRect.z || x === buildSiteRect.width - 1 || y === buildSiteRect.height - 1 || z === buildSiteRect.length - 1) {
+            // queue up the placement of a grass-block here
+            plan_steps.push(new PlaceBlock(Material.GRASS, {x, y, z}));
+         }
+      }
+
+      function cut_doorway() {
+         var a = [buildSiteRect.x + 1, (buildSiteRect.y + buildSiteRect.height), buildSiteRect.z - 1];
+         var b = [buildSiteRect.x + 1, (buildSiteRect.y + buildSiteRect.height), buildSiteRect.z - 2];
+         [a, b] = [a, b].map(([x, y, z]) => {x, y, z});
+
+         var rm_a = new MineBlock(a);
+         var rm_b = new MineBlock(b);
+
+         plan_steps.push(rm_a, rm_b);
+      }
+      cut_doorway();
+
+      // 5) link all of the subtasks in the plan end-to-end
+      var task = plan_steps[0];
+      for (var i = 1; i < plan_steps.length; i++) {
+         task.next_task = plan_steps[i];
+         task = plan_steps[i];
+      }
+
+      this.subtasks = plan_steps;
+      console.log(this.subtasks);
+      this.currentTask = plan_steps[0];
+   }
+
+   /*
+    Chonky fuckin' boi of a `tick` function oO
+   */
+   tick() {
+      super.tick(this.person);
+      console.log('BuildHome.tick', this.currentTask);
+
+      // if we still have a pending task
+      if (this.currentTask != null) {
+         // invoke that task's `tick` method, holding the result
+         var t = this.currentTask.tick(this.person, 1);
+
+         // if the current task has declared itself to be complete
+         if (this.currentTask.is_complete) {
+            // and it has not forwarded its own next-step
+            if (t == null) {
+               // move on to attribute-linked next-step provided
+               this.currentTask = this.currentTask.next_task;
+            }
+            // if it has forwarded its own next-step
+            else {
+               // save a reference to the task that just finished
+               var oldTask = this.currentTask;
+
+               // follow `t`s 'next_task' link-chain, checking if `prevTask` appears in that chain
+
+               var last_task = t; // the last observed task in the link-chain
+               var chainLoopsBack = false;
+               var chainPatched = false;
+
+               while (last_task != null) {
+                  if (last_task == oldTask) {
+                     chainLoopsBack = true;
+                     break;
+                  }
+                  else if (last_task == oldTask.next_task) {
+                     chainPatched = true;
+                     break;
+                  }
+
+                  // proceed down the chain
+                  last_task = last_task.next_task;
+               }
+
+               if (chainLoopsBack) {
+                  console.error('weird, the task is already complete');
+               }
+               else if (chainPatched) {
+                  // chain is already patched, we don't need to do anything
+               }
+               else {
+                  // we need to patch it ourselves
+                  last_task.next_task = oldTask.next_task;
+               }
+
+               // proceed to the provided next task
+               this.currentTask = t;
+            }
+         }
+         // if the current task has not declared itself complete, but has forwarded a next-task
+         else if (t != null) {
+            var oldTask = this.currentTask;
+            
+            // follow `t`s 'next_task' link-chain, checking if `prevTask` appears in that chain
+
+            var last_task = t; // the last observed task in the link-chain
+            var chainLoopsBack = false;
+            var chainPatched = false;
+
+            while (last_task != null) {
+               if (last_task == oldTask) {
+                  chainLoopsBack = true;
+                  break;
+               }
+               else if (last_task == oldTask.next_task) {
+                  chainPatched = true;
+                  break;
+               }
+
+               // proceed down the chain
+               last_task = last_task.next_task;
+            }
+
+            if (chainLoopsBack) {
+               // chain is already intact, no action necessary
+            }
+            else if (chainPatched) {
+               // the incomplete task has explicitly linked the task it provided with its next-task, so it has opted out
+               // no action necessary
+            }
+            else {
+               // we'll assume this course of action for now
+               last_task.next_task = oldTask;
+            }
+
+            this.currentTask = t;
+         }
+
+         return this;
+      }
+
+      // if all tasks have been completed
+      else {
+         this.complete();
+         return null;
+      }
+   }
+}
+
+module.exports.BuildHome = BuildHome;
+
+/*
+   given an array of Tasks, will run them each to completion one-after-another
+*/
+class TaskSequence extends Task {
+   constructor(tasks) {
+      super();
+
+      if (Array.isArray(tasks)) {
+         this.tasks = tasks;
+         this.currentTask = tasks[0];
+      }
+      else if (tasks instanceof Task) {
+         this.tasks = [];
+         var t = tasks;
+         while (t != null) {
+            this.tasks.push(t);
+            t = t.next_task;
+         }
+
+         this.currentTask = this.tasks[0];
+      }
+   }
+
+   tick(person, n) {
+
+      //TODO import the linked-list maintaining logic from BuildHome.tick
+
+      super.tick(person);
+
+      if (this.currentTask != null) {
+         var t = this.currentTask.tick(person, n);
+         
+         if (this.currentTask.is_complete) {
+            var i = this.tasks.indexOf(this.currentTask);
+            if (i < this.tasks.length - 1) {
+               this.currentTask = this.tasks[i + 1];
+            }
+            else {
+               this.is_complete = true;
+            }
+         }
+
+         return this;
+      }
+
+      return null;
+   }
+}
+
+module.exports.TaskSequence = TaskSequence;
+},{"./blockdata":2,"./blockselection.js":3,"./geometry":4,"./pathfinding.js":6,"assert":52,"underscore":50}],2:[function(require,module,exports){
 (function (Buffer){(function (){
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -772,6 +1062,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         };
         BlockSelection.prototype.all = function () {
             return this.b.getBlocks();
+        };
+        /*
+         computes the internal 3D volume of the selected blocks
+        */
+        BlockSelection.prototype.getVolume = function () {
+            //TODO
         };
         /*
         combines all 'selected' blocks into a single 3D shape
@@ -1454,7 +1750,7 @@ class Person extends Entity {
          return walk;
       });
 
-      this.addTask(launchWalkTask);
+      // this.addTask(launchWalkTask);
    }
 
    claimBlock(x, y, z) {
@@ -1471,6 +1767,10 @@ class Person extends Entity {
       else {
          this.tasks.push(task);
       }
+   }
+
+   clearTasks() {
+      this.tasks = [];
    }
 
    setPos(x, y, z) {
@@ -1511,6 +1811,46 @@ class Person extends Entity {
          var task = this.tasks[i];
          this.tasks[i] = task.tick(this, n);
       }
+   }
+
+
+   /*
+   use a grid-search to find the nearest N blocks of T material which are not inside of the BlockSelection named `exclude`
+   */
+  findNearestBlock(N, T, exclude=null) {
+      const start_pos = _.clone(this.pos);
+      const max_dist = 10;
+      const max_iter = max_dist * max_dist;
+      const results = [];
+
+      for (let i = 0; i < max_iter && results.length < N; i++) {
+         const x = start_pos.x + (i % max_dist) - (max_dist / 2);
+         const y = start_pos.y + Math.floor(i / max_dist) - (max_dist / 2);
+         const z = start_pos.z;
+         const block_type = this.world.data.getBlockType(x, y, z);
+
+         if (block_type === T && (exclude == null || !exclude.contains(x, y, z))) {
+            results.push({x, y, z});
+         }
+      }
+
+      return results;
+   }
+
+   buildHome() {
+      var construction = new behavior.BuildHome(this, _.clone(this.pos));
+      this.addTask(construction);
+
+      var monitor_construction = (resolve, reject) => {
+         const check_construction = setInterval(() => {
+            if (construction.is_complete) {
+               clearInterval(check_construction);
+               resolve();
+            }
+         }, 100);
+      };
+
+      return new Promise(monitor_construction);
    }
 }
 
@@ -1605,6 +1945,10 @@ class Inventory {
    resetSlot(slot) {
       slot.type = slot.item = null;
       slot.count = 0;
+   }
+
+   getCount(type) {
+      return this.slots.filter(slot => (slot.type === type)).reduce((prev, curr) => prev + curr.count, 0);
    }
 }
 
@@ -1767,7 +2111,9 @@ class TopDownRenderer {
          guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
 
-         guy.inventory.addItem({block_type:'sapling'}, 6, 25);
+         guy.inventory.addItem({block_type:'sapling'}, 'sapling', 25);
+
+         guy.buildHome();
       }
       catch (error) {
          console.error(error);
@@ -2170,6 +2516,15 @@ class World {
 
       // Mapping from villager uids to the BlockSelections that comprise their respective property claims
       this.villagerPropertyClaims = {};
+   }
+
+   getEntity(q) {
+      return _.find(this.entities, e => _.isMatch(e, q));
+   }
+
+   getEntities(q) {
+      const qf = _.matcher(q);
+      return this.entities.filter(qf);
    }
 
    getBlock(x, y, z) {
@@ -32884,7 +33239,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 
 // takes ~157ms on a 5000x5000 image
-var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_37_arg0_=4899*_inline_37_arg1_+9617*_inline_37_arg2_+1868*_inline_37_arg3_+8192>>14}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
+var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_34_arg0_=4899*_inline_34_arg1_+9617*_inline_34_arg2_+1868*_inline_34_arg3_+8192>>14}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
 
 /**
  * Compute Grayscale version of an RGB image.
@@ -32980,7 +33335,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_34_q=3*_inline_34_arg2_+10*_inline_34_arg3_+3*_inline_34_arg4_-3*_inline_34_arg7_-10*_inline_34_arg8_-3*_inline_34_arg9_,_inline_34_s=3*_inline_34_arg2_-3*_inline_34_arg4_+10*_inline_34_arg5_-10*_inline_34_arg6_+3*_inline_34_arg7_-3*_inline_34_arg9_;_inline_34_arg0_=Math.sqrt(_inline_34_s*_inline_34_s+_inline_34_q*_inline_34_q)}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_34_q","_inline_34_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=3*_inline_31_arg2_+10*_inline_31_arg3_+3*_inline_31_arg4_-3*_inline_31_arg7_-10*_inline_31_arg8_-3*_inline_31_arg9_,_inline_31_s=3*_inline_31_arg2_-3*_inline_31_arg4_+10*_inline_31_arg5_-10*_inline_31_arg6_+3*_inline_31_arg7_-3*_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Scharr transform.
@@ -33019,7 +33374,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_28_q=_inline_28_arg2_+2*_inline_28_arg3_+_inline_28_arg4_-_inline_28_arg7_-2*_inline_28_arg8_-_inline_28_arg9_,_inline_28_s=_inline_28_arg2_-_inline_28_arg4_+2*_inline_28_arg5_-2*_inline_28_arg6_+_inline_28_arg7_-_inline_28_arg9_;_inline_28_arg0_=Math.sqrt(_inline_28_s*_inline_28_s+_inline_28_q*_inline_28_q)}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_28_q","_inline_28_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_37_q=_inline_37_arg2_+2*_inline_37_arg3_+_inline_37_arg4_-_inline_37_arg7_-2*_inline_37_arg8_-_inline_37_arg9_,_inline_37_s=_inline_37_arg2_-_inline_37_arg4_+2*_inline_37_arg5_-2*_inline_37_arg6_+_inline_37_arg7_-_inline_37_arg9_;_inline_37_arg0_=Math.sqrt(_inline_37_s*_inline_37_s+_inline_37_q*_inline_37_q)}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_37_q","_inline_37_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
@@ -33058,7 +33413,7 @@ module.exports = function computeSobel (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_31_arg0_=0!==_inline_31_arg2_[0]&&0!==_inline_31_arg2_[1]?_inline_31_arg1_*_inline_31_arg1_+_inline_31_arg4_+_inline_31_arg5_-_inline_31_arg3_:0===_inline_31_arg2_[0]&&0===_inline_31_arg2_[1]?_inline_31_arg1_*_inline_31_arg1_:0===_inline_31_arg2_[0]?_inline_31_arg1_*_inline_31_arg1_+_inline_31_arg5_:_inline_31_arg1_*_inline_31_arg1_+_inline_31_arg4_}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_28_arg0_=0!==_inline_28_arg2_[0]&&0!==_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_+_inline_28_arg5_-_inline_28_arg3_:0===_inline_28_arg2_[0]&&0===_inline_28_arg2_[1]?_inline_28_arg1_*_inline_28_arg1_:0===_inline_28_arg2_[0]?_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg5_:_inline_28_arg1_*_inline_28_arg1_+_inline_28_arg4_}","args":[{"name":"_inline_28_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_28_arg1_","lvalue":false,"rvalue":true,"count":8},{"name":"_inline_28_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_28_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_28_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_28_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Squared Sum Area Table, also known as the integral of the squared image

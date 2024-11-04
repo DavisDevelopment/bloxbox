@@ -215,7 +215,7 @@ class Renderer3d {
       for (let x = 0; x < this.world.getWidth(); x++) {
          for (let y = 0; y < this.world.getHeight(); y++) {
             for (let z = 0; z < this.world.getDepth(); z++) {
-               const blockType = this.world.getBlockType(, y, z);
+               const blockType = this.world.getBlockType(x, y, z);
                if (blockType !== Material.AIR) {
                   const color = this.getColorFromMaterial(blockType);
                   this.addCubeData(positions, colors, x, y, z, color);

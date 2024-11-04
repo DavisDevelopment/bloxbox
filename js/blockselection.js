@@ -125,6 +125,12 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
             return this.b.getBlocks();
         };
         /*
+         computes the internal 3D volume of the selected blocks
+        */
+        BlockSelection.prototype.getVolume = function () {
+            //TODO
+        };
+        /*
         combines all 'selected' blocks into a single 3D shape
         */
         BlockSelection.prototype.getMesh = function () {

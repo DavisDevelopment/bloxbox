@@ -59,7 +59,7 @@ class RegionBuffer {
 }
 
 class BlockSelection {
-   b:RegionBuffer;
+   b: RegionBuffer;
 
    constructor() {
       this.b = new RegionBuffer();
@@ -93,6 +93,13 @@ class BlockSelection {
 
    all() {
       return this.b.getBlocks();
+   }
+
+   /*
+    computes the internal 3D volume of the selected blocks
+   */
+   getVolume() {
+      //TODO
    }
 
    /*

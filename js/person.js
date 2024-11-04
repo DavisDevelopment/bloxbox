@@ -78,7 +78,7 @@ class Person extends Entity {
          return walk;
       });
 
-      this.addTask(launchWalkTask);
+      // this.addTask(launchWalkTask);
    }
 
    claimBlock(x, y, z) {
@@ -95,6 +95,10 @@ class Person extends Entity {
       else {
          this.tasks.push(task);
       }
+   }
+
+   clearTasks() {
+      this.tasks = [];
    }
 
    setPos(x, y, z) {
@@ -135,6 +139,46 @@ class Person extends Entity {
          var task = this.tasks[i];
          this.tasks[i] = task.tick(this, n);
       }
+   }
+
+
+   /*
+   use a grid-search to find the nearest N blocks of T material which are not inside of the BlockSelection named `exclude`
+   */
+  findNearestBlock(N, T, exclude=null) {
+      const start_pos = _.clone(this.pos);
+      const max_dist = 10;
+      const max_iter = max_dist * max_dist;
+      const results = [];
+
+      for (let i = 0; i < max_iter && results.length < N; i++) {
+         const x = start_pos.x + (i % max_dist) - (max_dist / 2);
+         const y = start_pos.y + Math.floor(i / max_dist) - (max_dist / 2);
+         const z = start_pos.z;
+         const block_type = this.world.data.getBlockType(x, y, z);
+
+         if (block_type === T && (exclude == null || !exclude.contains(x, y, z))) {
+            results.push({x, y, z});
+         }
+      }
+
+      return results;
+   }
+
+   buildHome() {
+      var construction = new behavior.BuildHome(this, _.clone(this.pos));
+      this.addTask(construction);
+
+      var monitor_construction = (resolve, reject) => {
+         const check_construction = setInterval(() => {
+            if (construction.is_complete) {
+               clearInterval(check_construction);
+               resolve();
+            }
+         }, 100);
+      };
+
+      return new Promise(monitor_construction);
    }
 }
 
@@ -229,6 +273,10 @@ class Inventory {
    resetSlot(slot) {
       slot.type = slot.item = null;
       slot.count = 0;
+   }
+
+   getCount(type) {
+      return this.slots.filter(slot => (slot.type === type)).reduce((prev, curr) => prev + curr.count, 0);
    }
 }
 

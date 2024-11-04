@@ -36,6 +36,15 @@ class World {
       this.villagerPropertyClaims = {};
    }
 
+   getEntity(q) {
+      return _.find(this.entities, e => _.isMatch(e, q));
+   }
+
+   getEntities(q) {
+      const qf = _.matcher(q);
+      return this.entities.filter(qf);
+   }
+
    getBlock(x, y, z) {
       return this.data.getBlockType(x, y, z);
    }
