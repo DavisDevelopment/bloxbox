@@ -122,7 +122,7 @@ class MineBlock extends Task {
       );
 
       // if the person is within range of the block
-      if (distance <= 5) {
+      if (distance <= 15) {
          console.log('MINING THE BLOCK!!!');
          // first, get some info about the block being taken
          const oldBlockType = person.world.data.getBlockType(x, y, z);
@@ -193,7 +193,7 @@ class PlaceBlock extends Task {
       );
 
       // if the person is within range of the block
-      if (distance <= 5) {
+      if (distance <= 15) {
          console.log('Within range; placing block');
          // first, get some info about the block being taken
          const oldBlockType = person.world.data.getBlockType(x, y, z);
@@ -264,20 +264,79 @@ class BuildHome extends Task {
    build_plan() {
       // the most basic possible home is a 5x5x4 rectangle made of grass blocks, so in order to build one, we'll need to:
       // 1) calculate the number of grass blocks needed to fill the outermost layer of the planned rectangle
-      const width = 5;
-      const height = 5;
-      const depth = 4;
-      const blocksNeeded = (width * height * depth) - (width - 2) * (height - 2) * (depth - 2);
+      const width = 15;
+      const height = 15;
+      const depth = 6;
+
+      const floorBlocks = (width * height);
+      const westWallBlocks = (depth - 2) * (width - 2) * (height - 2);
+      const eastWallBlocks = westWallBlocks;
+      const northWallBlocks = (width * height) * (depth - 2);
+      const southWallBlocks = (width * height) * (depth - 2);
+
+      const blocksNeeded = (floorBlocks * 2) + westWallBlocks + eastWallBlocks + northWallBlocks + southWallBlocks;
       const wd = this.person.world.data;
-      // const 
+
+      // raise the target-position up so that the home will be built above ground
+      this.targetPosition.z -= depth;
 
       const buildSiteRect = new geom.Rect3D(
          this.targetPosition.x, this.targetPosition.y, this.targetPosition.z,
          depth, width, height
       );
 
+
       const buildSiteSel = new BlockSelection();
       buildSiteSel.addRect3D(buildSiteRect);
+
+      const boundarySelections = () => {
+         // build a BlockSelection of the blocks for the floor
+         const floorBlockSel = new BlockSelection();
+         for (var x = 0; x < width; x++) {
+            for (var y = 0; y < height; y++) {
+               floorBlockSel.add(this.targetPosition.x + x, this.targetPosition.y + y, this.targetPosition.z + depth);
+            }
+         }
+
+         // build a BlockSelection of the roof blocks
+         const roofBlockSel = new BlockSelection();
+         for (var x = 0; x < width; x++) {
+            for (var y = 0; y < height; y++) {
+               roofBlockSel.add(this.targetPosition.x + x, this.targetPosition.y + y, this.targetPosition.z);
+            }
+         }
+
+         // build BlockSelections for the four walls as well
+         const wallBlockSels = [];
+         for (let i = 0; i < 4; i++) {
+            wallBlockSels[i] = new BlockSelection();
+         }
+
+         // West and East walls
+         for (var z = 0; z < depth; z++) {
+            for (var y = 0; y < height; y++) {
+               wallBlockSels[0].add(this.targetPosition.x, this.targetPosition.y + y, this.targetPosition.z + z); // West
+               wallBlockSels[1].add(this.targetPosition.x + width - 1, this.targetPosition.y + y, this.targetPosition.z + z); // East
+            }
+         }
+         
+         // North and South walls
+         for (var x = 0; x < width; x++) {
+            for (var y = 0; y < height; y++) {
+               wallBlockSels[2].add(this.targetPosition.x + x, this.targetPosition.y + y, this.targetPosition.z); // North
+               wallBlockSels[3].add(this.targetPosition.x + x, this.targetPosition.y + y, this.targetPosition.z + depth - 1); // South
+            }
+         }
+      
+         return {
+            floor: floorBlockSel,
+            west: wallBlockSels[0],
+            east: wallBlockSels[1],
+            north: wallBlockSels[2],
+            south: wallBlockSels[3],
+            roof: roofBlockSel
+         };
+      }
 
       let plan_steps = [];
       
@@ -291,7 +350,7 @@ class BuildHome extends Task {
          const missingBlocks = blocksNeeded - blocksHeld;
 
          // list of coordinates of grass blocks nearby
-         const buildingMaterialLocations = this.person.findNearestBlock(missingBlocks, Material.GRASS, buildSiteSel);
+         const buildingMaterialLocations = this.person.findNearestBlock(missingBlocks, Material.STONE, buildSiteSel);
 
          // create a MineBlock task for each of the building material locations
          for (var i = 0; i < buildingMaterialLocations.length; i++) {
@@ -300,31 +359,25 @@ class BuildHome extends Task {
          }
       }
 
-      // 3) mine all non-air blocks inside our build site
-      let r = buildSiteRect;
-      for (var x = r.x+1; x < r.width - 1; x++) {
-         for (var y = r.y+1; y < r.height - 1; y++) {
-            for (var z = r.z+1; z < r.length - 1; z++) {
-               if (wd.getBlockType(x, y, z) !== Material.AIR) {
-                  plan_steps.push(new MineBlock({x, y, z}));
-               }
-            }
+      const planSelectionFill = (sel) => {
+         for (const [x, y, z] of sel.all()) {
+            plan_steps.push(new PlaceBlock(
+               Material.getMaterialByName(this.use_material),
+               {x, y, z}
+            ));
          }
       }
 
-         
-      // 4) place our grass blocks around the outer layer of our selected rectangle
-      
-      //   iterate over every point on the build site
-      for (const [x, y, z] of buildSiteSel.all()) {
-         // if these coordinates are along the outer edge of the build site rectangle
-         if (x === buildSiteRect.x || y === buildSiteRect.y || z === buildSiteRect.z || x === buildSiteRect.width - 1 || y === buildSiteRect.height - 1 || z === buildSiteRect.length - 1) {
-            // queue up the placement of a grass-block here
-            plan_steps.push(new PlaceBlock(Material.getMaterialByName(this.use_material), {x, y, z}));
-         }
-      }
+      // 4) place our blocks around the outer layer of our selected rectangle
+      var walls = boundarySelections();
+      planSelectionFill(walls.floor);
+      planSelectionFill(walls.east);
+      planSelectionFill(walls.west);
+      planSelectionFill(walls.south);
+      planSelectionFill(walls.north);
+      planSelectionFill(walls.roof);
 
-      function cut_doorway() {
+      var cut_doorway = ()=>{
          var a = {x:buildSiteRect.x + 1, y:(buildSiteRect.y + buildSiteRect.height), z:buildSiteRect.z - 1};
          var b = {x:buildSiteRect.x + 1, y:(buildSiteRect.y + buildSiteRect.height), z:buildSiteRect.z - 2};
 

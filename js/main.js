@@ -96,7 +96,13 @@ function main() {
    for (let x = 0; x < world.data.width; x++) {
       for (let y = 0; y < world.data.height; y++) {
          let z = hillZ[x][y];
+
          world.data.setBlockType(x, y, z, Material.GRASS);
+
+         // Set all the blocks below `z` to STONE
+         for (let z2 = z+1; z2 < world.data.depth; z2++) {
+            world.data.setBlockType(x, y, z2, Material.STONE);
+         }
       }
    }
 

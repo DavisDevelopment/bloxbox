@@ -325,24 +325,39 @@ class AStar {
       let closestNode = null;
       let closestDistance = Infinity;
 
-      for (let x = -1; x <= 1; x++) {
-         for (let z = -1; z <= 1; z++) {
-            if (x === 0 && z === 0) {
-               continue;
-            }
+      var groundZ = this.world.data.getHighestNonAirBlockAt(node.x, node.y);
+      // simply return the ground position
+      return this._nodeFor(node.x, node.y, groundZ);
 
-            const dx = x;
-            const dy = 0;
-            const dz = z;
+      // if position is suspended in the air above a standable position
+      if (this.world.data.getHighestNonAirBlockAt(node.x, node.y) > node.z) {
+         console.log('target position was in the air');
+         
 
-            const neighbor = this._nodeFor(node.x + dx, node.y + dy, node.z + dz);
+         // simply return the ground position
+         return this._nodeFor(node.x, node.y, groundZ);
+      }
 
-            if (neighbor && this.isStandable(this.world, neighbor.x, neighbor.y, neighbor.z)) {
-               const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      else {
+         for (let x = -1; x <= 1; x++) {
+            for (let z = -1; z <= 1; z++) {
+               if (x === 0 && z === 0) {
+                  continue;
+               }
 
-               if (distance < closestDistance) {
-                  closestNode = neighbor;
-                  closestDistance = distance;
+               const dx = x;
+               const dy = 0;
+               const dz = z;
+
+               const neighbor = this._nodeFor(node.x + dx, node.y + dy, node.z + dz);
+
+               if (neighbor && this.isStandable(this.world, neighbor.x, neighbor.y, neighbor.z)) {
+                  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                  if (distance < closestDistance) {
+                     closestNode = neighbor;
+                     closestDistance = distance;
+                  }
                }
             }
          }
