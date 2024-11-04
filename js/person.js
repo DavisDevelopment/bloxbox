@@ -213,19 +213,7 @@ class Inventory {
          return _.find(this.slots, q);
       }
       else {
-         const {i, type, item} = q;
-         if (nn(i) && typeof i === 'number')
-            return this.slots[i];
-
-         var qo;
-
-         if (nn(type))
-            qo = (slot => slot.type === type);
-         else if (nn(item))
-            qo = (slot => slot.item == item);
-         else
-            throw new TypeError(`Invalid q argument given: ${q}`);
-
+         var qo = _.matcher(q);
          return this.getSlot(qo);
       }
    }
@@ -240,6 +228,7 @@ class Inventory {
 
       // check if we already have a slot which is occupied by the given type
       const existingSlotOfThatType = _.find(this.slots, slot => slot.type === type);
+      console.log(existingSlotOfThatType);
 
       // if we do
       if (existingSlotOfThatType != null) {

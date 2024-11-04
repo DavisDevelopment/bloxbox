@@ -254,7 +254,7 @@ class AStar {
       });
 
       options = options || {};
-      //! will necessitate a BlockModJournal class of some kind to implement
+      const closestTo = options.closestTo || true;
 
       this.start_pos = start_pos;
       this.end_pos = end_pos;
@@ -270,6 +270,10 @@ class AStar {
       var end = this._nodeFor(this.end_pos.x, this.end_pos.y, this.end_pos.z);
       console.log(`Plotting path from ${start.key} to ${end.key}`);
 
+      if (!this.isStandable(this.world, end.x, end.y, end.z)) {
+         end = this.getClosestStandableNodeTo(end);
+      }
+
       openSet.push(start);
 
       start.gCost = 0;
@@ -284,19 +288,17 @@ class AStar {
 
          // If we have reached a suitable target position
          if (pteq(currentNode, end)) {
-            // reconstruct and return the path
             return this.reconstructPath(currentNode);
          }
 
-         // If we have not, then mark the node as 'closed', since we know it's not what we're looking for
+         // Mark the node as 'closed'
          closedSet.add(currentNode);
 
-         // Now we're going to scan the adjacent nodes which can be navigated to
+         // Scan the adjacent nodes which can be navigated to
          const neighbors = this.getNeighbors(currentNode);
          console.log(neighbors.length);
 
          for (const neighbor of neighbors) {
-            // skip the node if we've already checked it before
             if (closedSet.has(neighbor)) {
                continue;
             }
@@ -317,6 +319,36 @@ class AStar {
 
       console.log('nope');
       return [];
+   }
+
+   getClosestStandableNodeTo(node) {
+      let closestNode = null;
+      let closestDistance = Infinity;
+
+      for (let x = -1; x <= 1; x++) {
+         for (let z = -1; z <= 1; z++) {
+            if (x === 0 && z === 0) {
+               continue;
+            }
+
+            const dx = x;
+            const dy = 0;
+            const dz = z;
+
+            const neighbor = this._nodeFor(node.x + dx, node.y + dy, node.z + dz);
+
+            if (neighbor && this.isStandable(this.world, neighbor.x, neighbor.y, neighbor.z)) {
+               const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+               if (distance < closestDistance) {
+                  closestNode = neighbor;
+                  closestDistance = distance;
+               }
+            }
+         }
+      }
+
+      return closestNode;
    }
 
    reconstructPath(currentNode) {

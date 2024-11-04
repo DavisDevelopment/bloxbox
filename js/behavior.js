@@ -103,6 +103,9 @@ class MineBlock extends Task {
    constructor(targetBlock) {
       super();
       this.targetBlock = targetBlock;
+      if (!targetBlock) {
+         throw new TypeError('targetBlock must be an object with x,y and z attributes');
+      }
    }
 
    tick(person, n) {
@@ -120,13 +123,14 @@ class MineBlock extends Task {
 
       // if the person is within range of the block
       if (distance <= 5) {
+         console.log('MINING THE BLOCK!!!');
          // first, get some info about the block being taken
          const oldBlockType = person.world.data.getBlockType(x, y, z);
          const blockItemType = Material.getMaterialName(oldBlockType);
          const blockItemCount = 1;
 
          const blockItemObject = {
-            block_type: blockItemType,
+            block_type: oldBlockType,
          };
 
          // now, remove that block from the world, replacing it with air
@@ -134,6 +138,7 @@ class MineBlock extends Task {
 
          // add the block into the person's inventory
          person.inventory.addItem(blockItemObject, blockItemType, blockItemCount);
+         console.log('Just added block to inventory');
 
          this.complete();
 
@@ -165,6 +170,17 @@ class PlaceBlock extends Task {
       
    }
 
+   /**
+     * Tries to place a block at the target position. If the person is
+     * within range of the block, it will be placed in the world and
+     * removed from the person's inventory. If not, it will walk to the
+     * target position and then return to this task.
+     * 
+     * @param {Person} person The person performing the action
+     * @param {Number} n How many ticks to process
+     * 
+     * @return {Task} The next task to be executed, or null if there is none
+     */
    tick(person, n) {
       console.log('PlaceBlock.tick');
 
@@ -178,17 +194,26 @@ class PlaceBlock extends Task {
 
       // if the person is within range of the block
       if (distance <= 5) {
+         console.log('Within range; placing block');
          // first, get some info about the block being taken
          const oldBlockType = person.world.data.getBlockType(x, y, z);
          const blockItemType = Material.getMaterialName(oldBlockType);
          const blockItemCount = 1;
 
          // check if the person has the block in their inventory
-         var invSlot = person.inventory.getSlot({type:Material.getMaterialName(this.blockToPlace)});
-         if (invSlot != null) {
+         var invQ = {
+            type: Material.getMaterialName(this.blockToPlace).toLowerCase()
+         };
+         console.log(invQ);
+         var invSlot = person.inventory.getSlot(invQ);
+
+         if (invSlot != null && invSlot.count >= 1) {
+            // if they do, remove one
             invSlot.count--;
+
+            // resetting the slot if we've just emptied it
             if (invSlot.count == 0) {
-               player.inventory.resetSlot(invSlot);
+               person.inventory.resetSlot(invSlot);
             }
 
             // set the block in the world
@@ -196,18 +221,22 @@ class PlaceBlock extends Task {
 
             // complete this task
             this.complete();
+
             return this.next_task;
+         }
+         else if (invSlot == null) {
+            throw new Error('Cannot place blocks I do not have');
          }
       }
 
       // otherwise
       else {
          // walk there
-         // const path = person.calcPathTo(x, y, z);
          let walk = new WalkPath({target_position:this.targetPosition, person:person});
 
          // and then return to this task when we have completed that walk
          walk.next_task = this;
+
          return walk;
       }
    }
@@ -226,6 +255,8 @@ class BuildHome extends Task {
       this.targetPosition = targetPosition;
       this.subtasks = null;
       this.currentTask = null;
+
+      this.use_material = 'stone';
 
       this.build_plan();
    }
@@ -251,12 +282,13 @@ class BuildHome extends Task {
       let plan_steps = [];
       
       // 2) check if we have at least that number of grass blocks
-      const grassCount = this.person.inventory.getCount(Material.GRASS);
-      if (grassCount < blocksNeeded) {
+      const blocksHeld = this.person.inventory.getCount(this.use_material);
+
+      if (blocksHeld < blocksNeeded) {
          // 2.1) if we do not, go and mine the remaining required number of grass blocks somewhere nearby
          
          // remaining required number of blocks
-         const missingBlocks = blocksNeeded - grassCount;
+         const missingBlocks = blocksNeeded - blocksHeld;
 
          // list of coordinates of grass blocks nearby
          const buildingMaterialLocations = this.person.findNearestBlock(missingBlocks, Material.GRASS, buildSiteSel);
@@ -288,14 +320,13 @@ class BuildHome extends Task {
          // if these coordinates are along the outer edge of the build site rectangle
          if (x === buildSiteRect.x || y === buildSiteRect.y || z === buildSiteRect.z || x === buildSiteRect.width - 1 || y === buildSiteRect.height - 1 || z === buildSiteRect.length - 1) {
             // queue up the placement of a grass-block here
-            plan_steps.push(new PlaceBlock(Material.GRASS, {x, y, z}));
+            plan_steps.push(new PlaceBlock(Material.getMaterialByName(this.use_material), {x, y, z}));
          }
       }
 
       function cut_doorway() {
-         var a = [buildSiteRect.x + 1, (buildSiteRect.y + buildSiteRect.height), buildSiteRect.z - 1];
-         var b = [buildSiteRect.x + 1, (buildSiteRect.y + buildSiteRect.height), buildSiteRect.z - 2];
-         [a, b] = [a, b].map(([x, y, z]) => {x, y, z});
+         var a = {x:buildSiteRect.x + 1, y:(buildSiteRect.y + buildSiteRect.height), z:buildSiteRect.z - 1};
+         var b = {x:buildSiteRect.x + 1, y:(buildSiteRect.y + buildSiteRect.height), z:buildSiteRect.z - 2};
 
          var rm_a = new MineBlock(a);
          var rm_b = new MineBlock(b);

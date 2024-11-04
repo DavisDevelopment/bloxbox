@@ -7,6 +7,7 @@ const Material = w.Material;
 const World = w.World;
 
 const {Rect3D} = require('./geometry');
+const assert = require('assert');
 
 class Rect {
    constructor(x, y, width, height) {
@@ -147,7 +148,7 @@ class TopDownRenderer {
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
       let worldY = Math.floor((y - me.viewRect.y) / blockSize);
 
-      try {
+      // try {
          // // Select the block at the clicked position
          const z = this.topBlocks.get(worldX, worldY);
          
@@ -155,14 +156,17 @@ class TopDownRenderer {
          guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
 
-         guy.inventory.addItem({block_type:'sapling'}, 'sapling', 25);
+         // give guy two stacks of grass blocks to start
+         guy.inventory.addItem({block_type:Material.GRASS}, 'grass', 64 * 2);
+         assert(guy.inventory.getCount('grass') == (64 * 2));
+         guy.inventory.addItem({block_type:Material.STONE}, 'stone', 64*2);
 
          guy.buildHome();
-      }
-      catch (error) {
-         console.error(error);
-         return ;
-      }
+      // }
+      // catch (error) {
+      //    console.error(error);
+      //    return ;
+      // }
    }
 
    onCanvasClicked(x, y) {

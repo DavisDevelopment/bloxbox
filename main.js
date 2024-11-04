@@ -104,6 +104,9 @@ class MineBlock extends Task {
    constructor(targetBlock) {
       super();
       this.targetBlock = targetBlock;
+      if (!targetBlock) {
+         throw new TypeError('targetBlock must be an object with x,y and z attributes');
+      }
    }
 
    tick(person, n) {
@@ -121,13 +124,14 @@ class MineBlock extends Task {
 
       // if the person is within range of the block
       if (distance <= 5) {
+         console.log('MINING THE BLOCK!!!');
          // first, get some info about the block being taken
          const oldBlockType = person.world.data.getBlockType(x, y, z);
          const blockItemType = Material.getMaterialName(oldBlockType);
          const blockItemCount = 1;
 
          const blockItemObject = {
-            block_type: blockItemType,
+            block_type: oldBlockType,
          };
 
          // now, remove that block from the world, replacing it with air
@@ -135,6 +139,7 @@ class MineBlock extends Task {
 
          // add the block into the person's inventory
          person.inventory.addItem(blockItemObject, blockItemType, blockItemCount);
+         console.log('Just added block to inventory');
 
          this.complete();
 
@@ -166,6 +171,17 @@ class PlaceBlock extends Task {
       
    }
 
+   /**
+     * Tries to place a block at the target position. If the person is
+     * within range of the block, it will be placed in the world and
+     * removed from the person's inventory. If not, it will walk to the
+     * target position and then return to this task.
+     * 
+     * @param {Person} person The person performing the action
+     * @param {Number} n How many ticks to process
+     * 
+     * @return {Task} The next task to be executed, or null if there is none
+     */
    tick(person, n) {
       console.log('PlaceBlock.tick');
 
@@ -179,17 +195,26 @@ class PlaceBlock extends Task {
 
       // if the person is within range of the block
       if (distance <= 5) {
+         console.log('Within range; placing block');
          // first, get some info about the block being taken
          const oldBlockType = person.world.data.getBlockType(x, y, z);
          const blockItemType = Material.getMaterialName(oldBlockType);
          const blockItemCount = 1;
 
          // check if the person has the block in their inventory
-         var invSlot = person.inventory.getSlot({type:Material.getMaterialName(this.blockToPlace)});
-         if (invSlot != null) {
+         var invQ = {
+            type: Material.getMaterialName(this.blockToPlace).toLowerCase()
+         };
+         console.log(invQ);
+         var invSlot = person.inventory.getSlot(invQ);
+
+         if (invSlot != null && invSlot.count >= 1) {
+            // if they do, remove one
             invSlot.count--;
+
+            // resetting the slot if we've just emptied it
             if (invSlot.count == 0) {
-               player.inventory.resetSlot(invSlot);
+               person.inventory.resetSlot(invSlot);
             }
 
             // set the block in the world
@@ -197,18 +222,22 @@ class PlaceBlock extends Task {
 
             // complete this task
             this.complete();
+
             return this.next_task;
+         }
+         else if (invSlot == null) {
+            throw new Error('Cannot place blocks I do not have');
          }
       }
 
       // otherwise
       else {
          // walk there
-         // const path = person.calcPathTo(x, y, z);
          let walk = new WalkPath({target_position:this.targetPosition, person:person});
 
          // and then return to this task when we have completed that walk
          walk.next_task = this;
+
          return walk;
       }
    }
@@ -227,6 +256,8 @@ class BuildHome extends Task {
       this.targetPosition = targetPosition;
       this.subtasks = null;
       this.currentTask = null;
+
+      this.use_material = 'stone';
 
       this.build_plan();
    }
@@ -252,12 +283,13 @@ class BuildHome extends Task {
       let plan_steps = [];
       
       // 2) check if we have at least that number of grass blocks
-      const grassCount = this.person.inventory.getCount(Material.GRASS);
-      if (grassCount < blocksNeeded) {
+      const blocksHeld = this.person.inventory.getCount(this.use_material);
+
+      if (blocksHeld < blocksNeeded) {
          // 2.1) if we do not, go and mine the remaining required number of grass blocks somewhere nearby
          
          // remaining required number of blocks
-         const missingBlocks = blocksNeeded - grassCount;
+         const missingBlocks = blocksNeeded - blocksHeld;
 
          // list of coordinates of grass blocks nearby
          const buildingMaterialLocations = this.person.findNearestBlock(missingBlocks, Material.GRASS, buildSiteSel);
@@ -289,14 +321,13 @@ class BuildHome extends Task {
          // if these coordinates are along the outer edge of the build site rectangle
          if (x === buildSiteRect.x || y === buildSiteRect.y || z === buildSiteRect.z || x === buildSiteRect.width - 1 || y === buildSiteRect.height - 1 || z === buildSiteRect.length - 1) {
             // queue up the placement of a grass-block here
-            plan_steps.push(new PlaceBlock(Material.GRASS, {x, y, z}));
+            plan_steps.push(new PlaceBlock(Material.getMaterialByName(this.use_material), {x, y, z}));
          }
       }
 
       function cut_doorway() {
-         var a = [buildSiteRect.x + 1, (buildSiteRect.y + buildSiteRect.height), buildSiteRect.z - 1];
-         var b = [buildSiteRect.x + 1, (buildSiteRect.y + buildSiteRect.height), buildSiteRect.z - 2];
-         [a, b] = [a, b].map(([x, y, z]) => {x, y, z});
+         var a = {x:buildSiteRect.x + 1, y:(buildSiteRect.y + buildSiteRect.height), z:buildSiteRect.z - 1};
+         var b = {x:buildSiteRect.x + 1, y:(buildSiteRect.y + buildSiteRect.height), z:buildSiteRect.z - 2};
 
          var rm_a = new MineBlock(a);
          var rm_b = new MineBlock(b);
@@ -1572,7 +1603,7 @@ class AStar {
       });
 
       options = options || {};
-      //! will necessitate a BlockModJournal class of some kind to implement
+      const closestTo = options.closestTo || true;
 
       this.start_pos = start_pos;
       this.end_pos = end_pos;
@@ -1588,6 +1619,10 @@ class AStar {
       var end = this._nodeFor(this.end_pos.x, this.end_pos.y, this.end_pos.z);
       console.log(`Plotting path from ${start.key} to ${end.key}`);
 
+      if (!this.isStandable(this.world, end.x, end.y, end.z)) {
+         end = this.getClosestStandableNodeTo(end);
+      }
+
       openSet.push(start);
 
       start.gCost = 0;
@@ -1602,19 +1637,17 @@ class AStar {
 
          // If we have reached a suitable target position
          if (pteq(currentNode, end)) {
-            // reconstruct and return the path
             return this.reconstructPath(currentNode);
          }
 
-         // If we have not, then mark the node as 'closed', since we know it's not what we're looking for
+         // Mark the node as 'closed'
          closedSet.add(currentNode);
 
-         // Now we're going to scan the adjacent nodes which can be navigated to
+         // Scan the adjacent nodes which can be navigated to
          const neighbors = this.getNeighbors(currentNode);
          console.log(neighbors.length);
 
          for (const neighbor of neighbors) {
-            // skip the node if we've already checked it before
             if (closedSet.has(neighbor)) {
                continue;
             }
@@ -1635,6 +1668,36 @@ class AStar {
 
       console.log('nope');
       return [];
+   }
+
+   getClosestStandableNodeTo(node) {
+      let closestNode = null;
+      let closestDistance = Infinity;
+
+      for (let x = -1; x <= 1; x++) {
+         for (let z = -1; z <= 1; z++) {
+            if (x === 0 && z === 0) {
+               continue;
+            }
+
+            const dx = x;
+            const dy = 0;
+            const dz = z;
+
+            const neighbor = this._nodeFor(node.x + dx, node.y + dy, node.z + dz);
+
+            if (neighbor && this.isStandable(this.world, neighbor.x, neighbor.y, neighbor.z)) {
+               const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+               if (distance < closestDistance) {
+                  closestNode = neighbor;
+                  closestDistance = distance;
+               }
+            }
+         }
+      }
+
+      return closestNode;
    }
 
    reconstructPath(currentNode) {
@@ -1885,19 +1948,7 @@ class Inventory {
          return _.find(this.slots, q);
       }
       else {
-         const {i, type, item} = q;
-         if (nn(i) && typeof i === 'number')
-            return this.slots[i];
-
-         var qo;
-
-         if (nn(type))
-            qo = (slot => slot.type === type);
-         else if (nn(item))
-            qo = (slot => slot.item == item);
-         else
-            throw new TypeError(`Invalid q argument given: ${q}`);
-
+         var qo = _.matcher(q);
          return this.getSlot(qo);
       }
    }
@@ -1912,6 +1963,7 @@ class Inventory {
 
       // check if we already have a slot which is occupied by the given type
       const existingSlotOfThatType = _.find(this.slots, slot => slot.type === type);
+      console.log(existingSlotOfThatType);
 
       // if we do
       if (existingSlotOfThatType != null) {
@@ -1963,6 +2015,7 @@ const Material = w.Material;
 const World = w.World;
 
 const {Rect3D} = require('./geometry');
+const assert = require('assert');
 
 class Rect {
    constructor(x, y, width, height) {
@@ -2103,7 +2156,7 @@ class TopDownRenderer {
       let worldX = Math.floor((x - me.viewRect.x) / blockSize);
       let worldY = Math.floor((y - me.viewRect.y) / blockSize);
 
-      try {
+      // try {
          // // Select the block at the clicked position
          const z = this.topBlocks.get(worldX, worldY);
          
@@ -2111,14 +2164,17 @@ class TopDownRenderer {
          guy.setPos(worldX, worldY, z);
          me.world.entities.push(guy);
 
-         guy.inventory.addItem({block_type:'sapling'}, 'sapling', 25);
+         // give guy two stacks of grass blocks to start
+         guy.inventory.addItem({block_type:Material.GRASS}, 'grass', 64 * 2);
+         assert(guy.inventory.getCount('grass') == (64 * 2));
+         guy.inventory.addItem({block_type:Material.STONE}, 'stone', 64*2);
 
          guy.buildHome();
-      }
-      catch (error) {
-         console.error(error);
-         return ;
-      }
+      // }
+      // catch (error) {
+      //    console.error(error);
+      //    return ;
+      // }
    }
 
    onCanvasClicked(x, y) {
@@ -2479,7 +2535,7 @@ function parseColor(baseColor) {
 
 module.exports['TopDownRenderer'] = TopDownRenderer;
 // module.exports
-},{"./geometry":4,"./person":7,"./world":9,"jquery":19,"numjs":45}],9:[function(require,module,exports){
+},{"./geometry":4,"./person":7,"./world":9,"assert":52,"jquery":19,"numjs":45}],9:[function(require,module,exports){
 
 var nj = require('numjs');
 var _ = require('underscore');
@@ -33239,7 +33295,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 
 // takes ~157ms on a 5000x5000 image
-var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_34_arg0_=4899*_inline_34_arg1_+9617*_inline_34_arg2_+1868*_inline_34_arg3_+8192>>14}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
+var doRgb2gray = require('cwise/lib/wrapper')({"args":["array","array","array","array"],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_37_arg0_=4899*_inline_37_arg1_+9617*_inline_37_arg2_+1868*_inline_37_arg3_+8192>>14}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"rgb2grayCwise","blockSize":64});
 
 /**
  * Compute Grayscale version of an RGB image.
@@ -33274,7 +33330,7 @@ module.exports = function rgb2gray (img) {
 var NdArray = require('../ndarray');
 var rgb2gray = require('./rgb2gray');
 
-var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_25_arg0_=0!==_inline_25_arg2_[0]&&0!==_inline_25_arg2_[1]?_inline_25_arg1_+_inline_25_arg4_+_inline_25_arg5_-_inline_25_arg3_:0===_inline_25_arg2_[0]&&0===_inline_25_arg2_[1]?_inline_25_arg1_:0===_inline_25_arg2_[0]?_inline_25_arg1_+_inline_25_arg5_:_inline_25_arg1_+_inline_25_arg4_}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
+var doIntegrate = require('cwise/lib/wrapper')({"args":["array","array","index",{"offset":[-1,-1],"array":0},{"offset":[-1,0],"array":0},{"offset":[0,-1],"array":0}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{_inline_31_arg0_=0!==_inline_31_arg2_[0]&&0!==_inline_31_arg2_[1]?_inline_31_arg1_+_inline_31_arg4_+_inline_31_arg5_-_inline_31_arg3_:0===_inline_31_arg2_[0]&&0===_inline_31_arg2_[1]?_inline_31_arg1_:0===_inline_31_arg2_[0]?_inline_31_arg1_+_inline_31_arg5_:_inline_31_arg1_+_inline_31_arg4_}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":true,"count":4},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":5},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":[]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doIntegrateBody","blockSize":64});
 
 /**
  * Compute Sum Area Table, also known as the integral of the image
@@ -33335,7 +33391,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_31_q=3*_inline_31_arg2_+10*_inline_31_arg3_+3*_inline_31_arg4_-3*_inline_31_arg7_-10*_inline_31_arg8_-3*_inline_31_arg9_,_inline_31_s=3*_inline_31_arg2_-3*_inline_31_arg4_+10*_inline_31_arg5_-10*_inline_31_arg6_+3*_inline_31_arg7_-3*_inline_31_arg9_;_inline_31_arg0_=Math.sqrt(_inline_31_s*_inline_31_s+_inline_31_q*_inline_31_q)}","args":[{"name":"_inline_31_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_31_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_31_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_31_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_31_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_31_q","_inline_31_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doScharr = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_34_q=3*_inline_34_arg2_+10*_inline_34_arg3_+3*_inline_34_arg4_-3*_inline_34_arg7_-10*_inline_34_arg8_-3*_inline_34_arg9_,_inline_34_s=3*_inline_34_arg2_-3*_inline_34_arg4_+10*_inline_34_arg5_-10*_inline_34_arg6_+3*_inline_34_arg7_-3*_inline_34_arg9_;_inline_34_arg0_=Math.sqrt(_inline_34_s*_inline_34_s+_inline_34_q*_inline_34_q)}","args":[{"name":"_inline_34_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_34_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_34_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_34_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_34_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_34_q","_inline_34_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Scharr transform.
@@ -33374,7 +33430,7 @@ var NdArray = require('../ndarray');
 var __ = require('../utils');
 var rgb2gray = require('./rgb2gray');
 
-var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_37_q=_inline_37_arg2_+2*_inline_37_arg3_+_inline_37_arg4_-_inline_37_arg7_-2*_inline_37_arg8_-_inline_37_arg9_,_inline_37_s=_inline_37_arg2_-_inline_37_arg4_+2*_inline_37_arg5_-2*_inline_37_arg6_+_inline_37_arg7_-_inline_37_arg9_;_inline_37_arg0_=Math.sqrt(_inline_37_s*_inline_37_s+_inline_37_q*_inline_37_q)}","args":[{"name":"_inline_37_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_37_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_37_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_37_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_37_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_37_q","_inline_37_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
+var doSobel = require('cwise/lib/wrapper')({"args":["array","array",{"offset":[-1,-1],"array":1},{"offset":[-1,0],"array":1},{"offset":[-1,1],"array":1},{"offset":[0,-1],"array":1},{"offset":[0,1],"array":1},{"offset":[1,-1],"array":1},{"offset":[1,0],"array":1},{"offset":[1,1],"array":1}],"pre":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"body":{"body":"{var _inline_25_q=_inline_25_arg2_+2*_inline_25_arg3_+_inline_25_arg4_-_inline_25_arg7_-2*_inline_25_arg8_-_inline_25_arg9_,_inline_25_s=_inline_25_arg2_-_inline_25_arg4_+2*_inline_25_arg5_-2*_inline_25_arg6_+_inline_25_arg7_-_inline_25_arg9_;_inline_25_arg0_=Math.sqrt(_inline_25_s*_inline_25_s+_inline_25_q*_inline_25_q)}","args":[{"name":"_inline_25_arg0_","lvalue":true,"rvalue":false,"count":1},{"name":"_inline_25_arg1_","lvalue":false,"rvalue":false,"count":0},{"name":"_inline_25_arg2_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg3_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg4_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg5_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg6_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg7_","lvalue":false,"rvalue":true,"count":2},{"name":"_inline_25_arg8_","lvalue":false,"rvalue":true,"count":1},{"name":"_inline_25_arg9_","lvalue":false,"rvalue":true,"count":2}],"thisVars":[],"localVars":["_inline_25_q","_inline_25_s"]},"post":{"body":"{}","args":[],"thisVars":[],"localVars":[]},"debug":false,"funcName":"doSobelBody","blockSize":64});
 
 /**
  * Find the edge magnitude using the Sobel transform.
